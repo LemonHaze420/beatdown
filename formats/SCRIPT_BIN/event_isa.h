@@ -236,6 +236,118 @@ enum EventOpcode : std::uint16_t
     EVENT_OP_EVENT_END = 0xCB,
 };
 
+enum class EventOpcodeSet : std::uint8_t
+{
+    Current,
+    Legacy50Exf,
+    Legacy51Exf,
+};
+
+constexpr std::uint16_t eventOpcodeShift(EventOpcodeSet opcodeSet)
+{
+    switch (opcodeSet)
+    {
+    case EventOpcodeSet::Legacy50Exf:
+        return 0x30;
+    case EventOpcodeSet::Legacy51Exf:
+        return 0x2F;
+    default:
+        return 0;
+    }
+}
+
+constexpr std::uint16_t eventPageSetOpcode(EventOpcodeSet opcodeSet)
+{
+    return EVENT_OP_PAGESET - eventOpcodeShift(opcodeSet);
+}
+
+constexpr std::uint16_t decodeEventOpcode(std::uint16_t serializedOpcode,
+                                          EventOpcodeSet opcodeSet)
+{
+    const std::uint16_t pageSet = eventPageSetOpcode(opcodeSet);
+    return serializedOpcode >= pageSet ?
+        serializedOpcode + eventOpcodeShift(opcodeSet) : serializedOpcode;
+}
+
+constexpr bool supportsEventOpcode(EventOpcode opcode,
+                                   EventOpcodeSet opcodeSet)
+{
+    if (opcodeSet == EventOpcodeSet::Current)
+        return true;
+    return opcode < eventPageSetOpcode(opcodeSet) || opcode >= EVENT_OP_PAGESET;
+}
+
+constexpr std::uint16_t encodeEventOpcode(EventOpcode opcode,
+                                          EventOpcodeSet opcodeSet)
+{
+    return opcode >= EVENT_OP_PAGESET ?
+        static_cast<std::uint16_t>(opcode) - eventOpcodeShift(opcodeSet) :
+        static_cast<std::uint16_t>(opcode);
+}
+
+enum EventTextAlignmentFlags : std::uint8_t
+{
+    EVENT_TEXT_ALIGN_CENTER = 0x01,
+    EVENT_TEXT_ALIGN_RIGHT = 0x04,
+};
+
+enum EventSoundChannel : std::uint8_t
+{
+    EVENT_SOUND_CHANNEL_0 = 0,
+    EVENT_SOUND_CHANNEL_1 = 1,
+    EVENT_SOUND_CHANNEL_2 = 2,
+};
+
+enum EventMessageSubstitutionTarget : std::uint32_t
+{
+    EVENT_MESSAGE_SUBSTITUTION_CHARACTER_NAME = 0,
+    EVENT_MESSAGE_SUBSTITUTION_STAGE_NAME = 1,
+    EVENT_MESSAGE_SUBSTITUTION_SECONDARY_NAME_TABLE = 2,
+    EVENT_MESSAGE_SUBSTITUTION_DECIMAL_NUMBER = 3,
+};
+
+enum EventTransitionFlags : std::uint32_t
+{
+    EVENT_TRANSITION_DEFER_UNTIL_CALC_START = 0x01,
+    EVENT_TRANSITION_WAIT_UNTIL_IDLE_BEFORE_START = 0x02,
+};
+
+enum EventVmValueType : std::uint32_t
+{
+    EVENT_VM_S32 = 0,
+    EVENT_VM_U32 = 1,
+    EVENT_VM_S16 = 2,
+    EVENT_VM_U16 = 3,
+    EVENT_VM_S8 = 4,
+    EVENT_VM_U8 = 5,
+    EVENT_VM_F32 = 6,
+    EVENT_VM_UNUSED = 0xFF,
+};
+
+enum GamepadButton : std::uint32_t
+{
+    GAMEPAD_SQUARE = 0x00001,
+    GAMEPAD_CIRCLE = 0x00002,
+    GAMEPAD_TRIANGLE = 0x00004,
+    GAMEPAD_CROSS = 0x00008,
+    GAMEPAD_R1 = 0x00010,
+    GAMEPAD_L2 = 0x00020,
+    GAMEPAD_DPAD_UP = 0x00040,
+    GAMEPAD_DPAD_DOWN = 0x00080,
+    GAMEPAD_DPAD_LEFT = 0x00100,
+    GAMEPAD_DPAD_RIGHT = 0x00200,
+    GAMEPAD_R3 = 0x00400,
+    GAMEPAD_SELECT = 0x00800,
+    GAMEPAD_START = 0x01000,
+    GAMEPAD_L3 = 0x02000,
+    GAMEPAD_R2 = 0x04000,
+    GAMEPAD_L1 = 0x08000,
+    GAMEPAD_LSTICK_LEFT = 0x10000,
+    GAMEPAD_LSTICK_RIGHT = 0x20000,
+    GAMEPAD_LSTICK_UP = 0x40000,
+    GAMEPAD_LSTICK_DOWN = 0x80000,
+};
+
 enum EventOperandTypeCode : std::uint8_t
 {
     EVENT_OPERAND_NONE = 0x01,
@@ -263,7 +375,7 @@ enum EventOperandTypeCode : std::uint8_t
     EVENT_OPERAND_DURATION = 0x17,
     EVENT_OPERAND_ROTATION = 0x18,
     EVENT_OPERAND_SIGNED_VALUE = 0x19,
-    EVENT_OPERAND_WAIT_BT_UNUSED = 0x1A,
+    EVENT_OPERAND_WAIT_BT_BUTTONS = 0x1A,
     EVENT_OPERAND_REGISTER_ID = 0x1B,
     EVENT_OPERAND_BGM_CHANNEL = 0x1C,
     EVENT_OPERAND_BGM_TRACK_ID = 0x1D,
@@ -323,10 +435,91 @@ struct EventOpcodeDescriptor
     std::uint8_t byteLength() const;
 };
 
-bool hasHeadOperand(const EventOpcodeDescriptor& descriptor);
-bool hasOperandType(const EventOpcodeDescriptor& descriptor,
-                    std::uint8_t wordIndex,
-                    EventOperandTypeCode type);
+enum class EventOperandEncoding : std::uint8_t
+{
+    S8,
+    U8,
+    S16,
+    U16,
+    S32,
+    U32,
+    F32,
+    PageId,
+    PageIdOrMinusOne,
+    MessageId,
+    ResourceId,
+    CallFunctionId,
+    PackedColorBgra8,
+    TextAlignmentFlags,
+    SoundChannel,
+    MessageSubstitutionTarget,
+    TransitionFlags,
+    GamepadButtons,
+    GamepadButtons16,
+    VmValueType,
+};
+
+struct EventEncodedOperand
+{
+    std::uint8_t byteOffset;
+    EventOperandEncoding encoding;
+    std::string_view name;
+    bool omitWhenZero = false;
+};
+
+struct EventInstructionEncoding
+{
+    std::array<EventEncodedOperand, 16> operands{};
+    std::uint8_t operandCount = 0;
+    bool dispatched = false;
+};
+
+template<typename... Operands>
+constexpr EventInstructionEncoding eventInstructionEncoding(Operands... operands)
+{
+    static_assert(sizeof...(operands) <= 16);
+    EventInstructionEncoding encoding;
+    const EventEncodedOperand fields[] = {operands...};
+    encoding.operandCount = static_cast<std::uint8_t>(sizeof...(operands));
+    encoding.dispatched = true;
+    for (std::size_t i = 0; i < encoding.operandCount; ++i)
+        encoding.operands[i] = fields[i];
+    return encoding;
+}
+
+constexpr EventEncodedOperand eventOperand(std::uint8_t byteOffset,
+                                           EventOperandEncoding encoding,
+                                           std::string_view name,
+                                           bool omitWhenZero = false)
+{
+    return {byteOffset, encoding, name, omitWhenZero};
+}
+
+constexpr std::uint8_t eventOperandSize(EventOperandEncoding encoding)
+{
+    switch (encoding)
+    {
+    case EventOperandEncoding::S8:
+    case EventOperandEncoding::U8:
+    case EventOperandEncoding::TextAlignmentFlags:
+    case EventOperandEncoding::SoundChannel:
+        return 1;
+    case EventOperandEncoding::S16:
+    case EventOperandEncoding::U16:
+    case EventOperandEncoding::PageId:
+    case EventOperandEncoding::PageIdOrMinusOne:
+    case EventOperandEncoding::GamepadButtons16:
+        return 2;
+    default:
+        return 4;
+    }
+}
+
+struct EventNamedValue
+{
+    std::uint32_t value;
+    std::string_view name;
+};
 
 inline constexpr std::array<std::string_view, EVENT_LANGUAGE_COUNT> EVENT_LANGUAGE_NAMES = {{
     "Japanese",
@@ -395,7 +588,7 @@ inline constexpr std::array<std::string_view, 67> EVENT_OPERAND_TYPE_NAMES = {{
     "duration",
     "rotation",
     "signed_value",
-    "unused_0x02",
+    "buttons",
     "register_id",
     "bgm_channel",
     "bgm_track_id",
@@ -888,7 +1081,7 @@ inline constexpr std::array<EventOperandMetadata, 509> EVENT_OPERAND_METADATA = 
     {EVENT_OPERAND_FADE_DOOR_CONTROL, 1},
     {EVENT_OPERAND_FADE_DOOR_CONTROL, 0},
     {EVENT_OPERAND_FADE_DOOR_CONTROL, 0},
-    {EVENT_OPERAND_WAIT_BT_UNUSED, 0},
+    {EVENT_OPERAND_WAIT_BT_BUTTONS, 0},
     {EVENT_OPERAND_LABEL_SLOT, 0},
     {EVENT_OPERAND_LABEL_SLOT, 0},
     {EVENT_OPERAND_MAILBOX_SLOT, 0},
@@ -1157,4 +1350,610 @@ inline constexpr std::array<EventOpcodeDescriptor, 0xCC> EVENT_OPCODE_DESCRIPTOR
     {EVENT_OP_EVENT_END, 1, 508, 1, "EVENT_END"},
 }};
 
+inline constexpr std::array<EventNamedValue, 20> EVENT_GAMEPAD_BUTTON_NAMES = {{
+    {GAMEPAD_SQUARE, "GAMEPAD_SQUARE"},
+    {GAMEPAD_CIRCLE, "GAMEPAD_CIRCLE"},
+    {GAMEPAD_TRIANGLE, "GAMEPAD_TRIANGLE"},
+    {GAMEPAD_CROSS, "GAMEPAD_CROSS"},
+    {GAMEPAD_R1, "GAMEPAD_R1"},
+    {GAMEPAD_L2, "GAMEPAD_L2"},
+    {GAMEPAD_DPAD_UP, "GAMEPAD_DPAD_UP"},
+    {GAMEPAD_DPAD_DOWN, "GAMEPAD_DPAD_DOWN"},
+    {GAMEPAD_DPAD_LEFT, "GAMEPAD_DPAD_LEFT"},
+    {GAMEPAD_DPAD_RIGHT, "GAMEPAD_DPAD_RIGHT"},
+    {GAMEPAD_R3, "GAMEPAD_R3"},
+    {GAMEPAD_SELECT, "GAMEPAD_SELECT"},
+    {GAMEPAD_START, "GAMEPAD_START"},
+    {GAMEPAD_L3, "GAMEPAD_L3"},
+    {GAMEPAD_R2, "GAMEPAD_R2"},
+    {GAMEPAD_L1, "GAMEPAD_L1"},
+    {GAMEPAD_LSTICK_LEFT, "GAMEPAD_LSTICK_LEFT"},
+    {GAMEPAD_LSTICK_RIGHT, "GAMEPAD_LSTICK_RIGHT"},
+    {GAMEPAD_LSTICK_UP, "GAMEPAD_LSTICK_UP"},
+    {GAMEPAD_LSTICK_DOWN, "GAMEPAD_LSTICK_DOWN"},
+}};
+
+inline constexpr std::array<EventNamedValue, 2> EVENT_TEXT_ALIGNMENT_NAMES = {{
+    {EVENT_TEXT_ALIGN_CENTER, "EVENT_TEXT_ALIGN_CENTER"},
+    {EVENT_TEXT_ALIGN_RIGHT, "EVENT_TEXT_ALIGN_RIGHT"},
+}};
+
+inline constexpr std::array<EventNamedValue, 3> EVENT_SOUND_CHANNEL_NAMES = {{
+    {EVENT_SOUND_CHANNEL_0, "EVENT_SOUND_CHANNEL_0"},
+    {EVENT_SOUND_CHANNEL_1, "EVENT_SOUND_CHANNEL_1"},
+    {EVENT_SOUND_CHANNEL_2, "EVENT_SOUND_CHANNEL_2"},
+}};
+
+inline constexpr std::array<EventNamedValue, 4>
+EVENT_MESSAGE_SUBSTITUTION_TARGET_NAMES = {{
+    {EVENT_MESSAGE_SUBSTITUTION_CHARACTER_NAME,
+     "EVENT_MESSAGE_SUBSTITUTION_CHARACTER_NAME"},
+    {EVENT_MESSAGE_SUBSTITUTION_STAGE_NAME,
+     "EVENT_MESSAGE_SUBSTITUTION_STAGE_NAME"},
+    {EVENT_MESSAGE_SUBSTITUTION_SECONDARY_NAME_TABLE,
+     "EVENT_MESSAGE_SUBSTITUTION_SECONDARY_NAME_TABLE"},
+    {EVENT_MESSAGE_SUBSTITUTION_DECIMAL_NUMBER,
+     "EVENT_MESSAGE_SUBSTITUTION_DECIMAL_NUMBER"},
+}};
+
+inline constexpr std::array<EventNamedValue, 2> EVENT_TRANSITION_FLAG_NAMES = {{
+    {EVENT_TRANSITION_DEFER_UNTIL_CALC_START,
+     "EVENT_TRANSITION_DEFER_UNTIL_CALC_START"},
+    {EVENT_TRANSITION_WAIT_UNTIL_IDLE_BEFORE_START,
+     "EVENT_TRANSITION_WAIT_UNTIL_IDLE_BEFORE_START"},
+}};
+
+inline constexpr std::array<EventNamedValue, 8> EVENT_VM_VALUE_TYPE_NAMES = {{
+    {EVENT_VM_S32, "S32"},
+    {EVENT_VM_U32, "U32"},
+    {EVENT_VM_S16, "S16"},
+    {EVENT_VM_U16, "U16"},
+    {EVENT_VM_S8, "S8"},
+    {EVENT_VM_U8, "U8"},
+    {EVENT_VM_F32, "F32"},
+    {EVENT_VM_UNUSED, "UNUSED"},
+}};
+
+inline constexpr std::array<EventInstructionEncoding, 0xCC>
+EVENT_INSTRUCTION_ENCODINGS = []
+{
+    using enum EventOperandEncoding;
+    std::array<EventInstructionEncoding, 0xCC> encodings{};
+
+    for (std::uint16_t opcode = EVENT_OP_PAGESET;
+         opcode <= EVENT_OP_EVENT_END; ++opcode)
+    {
+        encodings[opcode].dispatched = true;
+    }
+
+    const auto stored = [](std::uint8_t offset, EventOperandEncoding type,
+                           std::string_view name)
+    {
+        return eventOperand(offset, type, name, true);
+    };
+
+    const auto operandEncoding = [](EventOperandTypeCode type)
+    {
+        switch (type)
+        {
+        case EVENT_OPERAND_PAGE_ID:
+            return PageId;
+        case EVENT_OPERAND_MESSAGE_ID:
+            return MessageId;
+        case EVENT_OPERAND_TEXTURE_RESOURCE_ID:
+            return ResourceId;
+        case EVENT_OPERAND_POSITION_X:
+        case EVENT_OPERAND_POSITION_Y:
+        case EVENT_OPERAND_POSITION_Z:
+        case EVENT_OPERAND_SCALE_X:
+        case EVENT_OPERAND_SCALE_Y:
+        case EVENT_OPERAND_ROTATION:
+        case EVENT_OPERAND_WORLD_X:
+        case EVENT_OPERAND_WORLD_Y:
+        case EVENT_OPERAND_WORLD_Z:
+            return F32;
+        case EVENT_OPERAND_UNSIGNED_VALUE:
+            return U32;
+        case EVENT_OPERAND_FLOAT_VALUE:
+            return F32;
+        case EVENT_OPERAND_PACKED_COLOR:
+            return PackedColorBgra8;
+        case EVENT_OPERAND_PAD_PRESSED_MASK:
+        case EVENT_OPERAND_PAD_HELD_MASK:
+        case EVENT_OPERAND_PAD_RELEASED_MASK:
+        case EVENT_OPERAND_PAD_REPEAT_MASK:
+            return GamepadButtons;
+        case EVENT_OPERAND_BGM_CHANNEL:
+            return SoundChannel;
+        case EVENT_OPERAND_FUNCTION_ID:
+            return CallFunctionId;
+        case EVENT_OPERAND_POSITION_X_S16:
+        case EVENT_OPERAND_POSITION_Y_S16:
+        case EVENT_OPERAND_SPRITE_SLOT:
+        case EVENT_OPERAND_TEXTURE_SLOT:
+        case EVENT_OPERAND_WIDTH:
+        case EVENT_OPERAND_HEIGHT:
+        case EVENT_OPERAND_LABEL_SLOT:
+        case EVENT_OPERAND_MAILBOX_SLOT:
+            return S16;
+        case EVENT_OPERAND_TEXT_SLOT:
+        case EVENT_OPERAND_REGISTER_ID:
+        case EVENT_OPERAND_SOURCE_REGISTER_A:
+        case EVENT_OPERAND_SOURCE_REGISTER_B:
+        case EVENT_OPERAND_SAVE_FLAG_ID:
+        case EVENT_OPERAND_STATUS_ID:
+            return U16;
+        default:
+            return S32;
+        }
+    };
+
+    const auto isHalfwordOperand = [](EventOperandTypeCode type)
+    {
+        switch (type)
+        {
+        case EVENT_OPERAND_PAGE_ID:
+        case EVENT_OPERAND_TEXT_SLOT:
+        case EVENT_OPERAND_TEXTURE_SLOT:
+        case EVENT_OPERAND_SPRITE_SLOT:
+        case EVENT_OPERAND_POSITION_X_S16:
+        case EVENT_OPERAND_POSITION_Y_S16:
+        case EVENT_OPERAND_WIDTH:
+        case EVENT_OPERAND_HEIGHT:
+        case EVENT_OPERAND_REGISTER_ID:
+        case EVENT_OPERAND_SOURCE_REGISTER_A:
+        case EVENT_OPERAND_SOURCE_REGISTER_B:
+        case EVENT_OPERAND_LABEL_SLOT:
+        case EVENT_OPERAND_MAILBOX_SLOT:
+        case EVENT_OPERAND_SAVE_FLAG_ID:
+        case EVENT_OPERAND_STATUS_ID:
+            return true;
+        default:
+            return false;
+        }
+    };
+
+    for (std::uint16_t opcode = EVENT_OP_EXF_SET_POS;
+         opcode <= EVENT_OP_EXF_MESTURN; ++opcode)
+    {
+        const EventOpcodeDescriptor& descriptor =
+            EVENT_OPCODE_DESCRIPTORS[opcode];
+        EventInstructionEncoding encoding;
+        encoding.dispatched = true;
+        std::array<bool, 64> covered{};
+        covered[0] = true;
+        covered[1] = true;
+
+        for (std::size_t i = 0; i < descriptor.operandCount; ++i)
+        {
+            const EventOperandMetadata& metadata =
+                EVENT_OPERAND_METADATA[descriptor.operandOffset + i];
+            if (metadata.typeCode == EVENT_OPERAND_NONE)
+                continue;
+
+            std::uint8_t offset = metadata.wordIndex * 4;
+            const bool halfword = isHalfwordOperand(metadata.typeCode);
+            if (halfword)
+            {
+                if (metadata.typeCode == EVENT_OPERAND_SOURCE_REGISTER_A)
+                    offset += 0;
+                else if (metadata.typeCode == EVENT_OPERAND_SOURCE_REGISTER_B)
+                    offset += 2;
+                else if (metadata.wordIndex == 0)
+                    offset = 2;
+                else
+                    offset += 2;
+            }
+
+            const EventOperandEncoding type = operandEncoding(metadata.typeCode);
+            encoding.operands[encoding.operandCount++] =
+                eventOperand(offset, type,
+                             EVENT_OPERAND_TYPE_NAMES[metadata.typeCode]);
+            const std::uint8_t size = eventOperandSize(type);
+            for (std::uint8_t byte = 0; byte < size; ++byte)
+                covered[offset + byte] = true;
+        }
+
+        const std::uint8_t byteLength = descriptor.wordCount * 4;
+        for (std::uint8_t offset = 2; offset < byteLength;)
+        {
+            if (covered[offset])
+            {
+                ++offset;
+                continue;
+            }
+
+            EventOperandEncoding type = U8;
+            std::uint8_t size = 1;
+            if ((offset & 3) == 0 && offset + 4 <= byteLength &&
+                !covered[offset + 1] && !covered[offset + 2] &&
+                !covered[offset + 3])
+            {
+                type = U32;
+                size = 4;
+            }
+            else if ((offset & 1) == 0 &&
+                     offset + 2 <= byteLength &&
+                     !covered[offset + 1])
+            {
+                type = U16;
+                size = 2;
+            }
+
+            encoding.operands[encoding.operandCount++] =
+                stored(offset, type, "storage");
+            for (std::uint8_t byte = 0; byte < size; ++byte)
+                covered[offset + byte] = true;
+            offset += size;
+        }
+        encodings[opcode] = encoding;
+    }
+
+    encodings[EVENT_OP_EVENT] = eventInstructionEncoding(
+        eventOperand(0x02, U16, "eventId"));
+    encodings[EVENT_OP_END_EVENT] = eventInstructionEncoding(
+        stored(0x02, U16, "ignored"));
+
+    encodings[EVENT_OP_EXF_SET_MESNAMES] = eventInstructionEncoding(
+        stored(0x02, U16, "reserved02"),
+        eventOperand(0x04, MessageSubstitutionTarget, "target"),
+        eventOperand(0x08, S32, "fallback"),
+        stored(0x0C, U16, "reserved12"),
+        eventOperand(0x0E, U16, "sourceRegister"));
+
+    encodings[EVENT_OP_PAGESET] = eventInstructionEncoding(
+        eventOperand(0x02, PageId, "page"));
+    encodings[EVENT_OP_END_PAGESET] = eventInstructionEncoding(
+        eventOperand(0x02, PageIdOrMinusOne, "page"));
+    encodings[EVENT_OP_PAGE_JUMP] = encodings[EVENT_OP_PAGESET];
+
+    const auto jumpCompare = [&](EventOperandEncoding comparison)
+    {
+        EventInstructionEncoding encoding = eventInstructionEncoding(
+            eventOperand(0x02, PageId, "page"),
+            eventOperand(0x04, comparison, "compare"));
+        if (eventOperandSize(comparison) == 1)
+        {
+            encoding.operands[encoding.operandCount++] =
+                stored(0x05, U8, "storage05");
+        }
+        if (eventOperandSize(comparison) <= 2)
+        {
+            encoding.operands[encoding.operandCount++] =
+                stored(0x06, U16, "storage06");
+        }
+        encoding.operands[encoding.operandCount++] =
+            stored(0x08, U16, "storage08");
+        encoding.operands[encoding.operandCount++] =
+            eventOperand(0x0A, U16, "register");
+        return encoding;
+    };
+    encodings[EVENT_OP_JUMP_BEQI] = jumpCompare(S32);
+    encodings[EVENT_OP_JUMP_BNEI] = encodings[EVENT_OP_JUMP_BEQI];
+    encodings[EVENT_OP_JUMP_BEQUI] = jumpCompare(U32);
+    encodings[EVENT_OP_JUMP_BNEUI] = encodings[EVENT_OP_JUMP_BEQUI];
+    encodings[EVENT_OP_JUMP_BEQS] = jumpCompare(S16);
+    encodings[EVENT_OP_JUMP_BNES] = encodings[EVENT_OP_JUMP_BEQS];
+    encodings[EVENT_OP_JUMP_BEQUS] = jumpCompare(U16);
+    encodings[EVENT_OP_JUMP_BNEUS] = encodings[EVENT_OP_JUMP_BEQUS];
+    encodings[EVENT_OP_JUMP_BEQB] = jumpCompare(S8);
+    encodings[EVENT_OP_JUMP_BNEB] = encodings[EVENT_OP_JUMP_BEQB];
+    encodings[EVENT_OP_JUMP_BEQUB] = jumpCompare(U8);
+    encodings[EVENT_OP_JUMP_BNEUB] = encodings[EVENT_OP_JUMP_BEQUB];
+    encodings[EVENT_OP_JUMP_BEQF] = jumpCompare(F32);
+    encodings[EVENT_OP_JUMP_BNEF] = encodings[EVENT_OP_JUMP_BEQF];
+
+    const EventInstructionEncoding unaryJump = eventInstructionEncoding(
+        eventOperand(0x02, PageId, "page"),
+        stored(0x04, U16, "reserved04"),
+        eventOperand(0x06, U16, "register"));
+    encodings[EVENT_OP_JZE] = unaryJump;
+    encodings[EVENT_OP_JNZ] = unaryJump;
+    encodings[EVENT_OP_JMI] = unaryJump;
+    encodings[EVENT_OP_JPZ] = unaryJump;
+
+    encodings[EVENT_OP_TEX_LOAD] = eventInstructionEncoding(
+        eventOperand(0x02, S16, "textureSlot"),
+        eventOperand(0x04, ResourceId, "resource"),
+        eventOperand(0x08, S32, "value"),
+        eventOperand(0x0C, U16, "width"),
+        eventOperand(0x0E, U16, "height"));
+    encodings[EVENT_OP_TEX_RELEASE] = eventInstructionEncoding(
+        eventOperand(0x02, S16, "textureSlot"));
+    encodings[EVENT_OP_SPRITE] = eventInstructionEncoding(
+        eventOperand(0x02, S16, "spriteSlot"),
+        eventOperand(0x04, S16, "width"),
+        eventOperand(0x06, S16, "height"),
+        eventOperand(0x08, S16, "x"), eventOperand(0x0A, S16, "y"),
+        eventOperand(0x0C, S32, "textureSource"));
+    encodings[EVENT_OP_SPRSET_XYZ] = eventInstructionEncoding(
+        eventOperand(0x02, S16, "spriteSlot"),
+        eventOperand(0x04, F32, "x"), eventOperand(0x08, F32, "y"),
+        eventOperand(0x0C, S32, "layer"));
+    encodings[EVENT_OP_SPRSET_SCALE] = eventInstructionEncoding(
+        eventOperand(0x02, S16, "spriteSlot"),
+        eventOperand(0x04, F32, "scaleX"),
+        eventOperand(0x08, F32, "scaleY"));
+    encodings[EVENT_OP_SPRSET_COLOR] = eventInstructionEncoding(
+        eventOperand(0x02, S16, "spriteSlot"),
+        eventOperand(0x04, PackedColorBgra8, "color"));
+    encodings[EVENT_OP_SPRDISP_ON] = eventInstructionEncoding(
+        eventOperand(0x02, S16, "spriteSlot"));
+    encodings[EVENT_OP_SPRCLEAR] = encodings[EVENT_OP_SPRDISP_ON];
+    encodings[EVENT_OP_SPRCNG_XYZ] = eventInstructionEncoding(
+        eventOperand(0x02, S16, "spriteSlot"),
+        eventOperand(0x04, F32, "x"), eventOperand(0x08, F32, "y"),
+        eventOperand(0x0C, F32, "z"),
+        eventOperand(0x10, S32, "duration"),
+        eventOperand(0x14, TransitionFlags, "flags"));
+    encodings[EVENT_OP_SPRCNG_COLOR] = eventInstructionEncoding(
+        eventOperand(0x02, S16, "spriteSlot"),
+        eventOperand(0x04, PackedColorBgra8, "color"),
+        eventOperand(0x08, S32, "duration"),
+        eventOperand(0x0C, TransitionFlags, "flags"));
+    encodings[EVENT_OP_SPRCNG_SCALE] = eventInstructionEncoding(
+        eventOperand(0x02, S16, "spriteSlot"),
+        eventOperand(0x04, F32, "scaleX"),
+        eventOperand(0x08, F32, "scaleY"),
+        eventOperand(0x0C, S32, "duration"),
+        eventOperand(0x10, TransitionFlags, "flags"));
+    encodings[EVENT_OP_SPRCNG_TURN] = eventInstructionEncoding(
+        eventOperand(0x02, S16, "spriteSlot"),
+        eventOperand(0x04, F32, "rotation"),
+        eventOperand(0x08, S32, "duration"),
+        eventOperand(0x0C, TransitionFlags, "flags"));
+    encodings[EVENT_OP_SPRCALCSTART] = eventInstructionEncoding(
+        eventOperand(0x02, S16, "spriteSlot"));
+    encodings[EVENT_OP_WAIT_SPR] = eventInstructionEncoding(
+        eventOperand(0x02, S16, "spriteSlot"),
+        eventOperand(0x04, S32, "holdFrames"));
+    encodings[EVENT_OP_TEX_CHECK] = eventInstructionEncoding(
+        eventOperand(0x02, S16, "textureSlot"));
+    encodings[EVENT_OP_SPRDISP_OFF] = eventInstructionEncoding(
+        eventOperand(0x02, S16, "spriteSlot"));
+    encodings[EVENT_OP_SPRALLCALCSTART] = eventInstructionEncoding(
+        eventOperand(0x02, S16, "spriteSlot"));
+    encodings[EVENT_OP_PADBTN_SET] = eventInstructionEncoding(
+        eventOperand(0x02, S16, "spriteSlot"),
+        eventOperand(0x04, F32, "x"), eventOperand(0x08, F32, "y"),
+        eventOperand(0x0C, F32, "scaleX"),
+        eventOperand(0x10, F32, "scaleY"),
+        eventOperand(0x14, GamepadButtons, "buttons"));
+
+    encodings[EVENT_OP_BGM_PLAY] = eventInstructionEncoding(
+        eventOperand(0x02, SoundChannel, "channel"),
+        stored(0x03, U8, "reserved03"),
+        eventOperand(0x04, S32, "trackId"));
+    encodings[EVENT_OP_BGM_STOP] = eventInstructionEncoding(
+        eventOperand(0x02, SoundChannel, "channel"),
+        stored(0x03, U8, "reserved03"));
+    encodings[EVENT_OP_BGM_FADE] = eventInstructionEncoding(
+        eventOperand(0x02, SoundChannel, "channel"),
+        stored(0x03, U8, "reserved03"),
+        eventOperand(0x04, S32, "startPercent"),
+        eventOperand(0x08, S32, "targetPercent"),
+        eventOperand(0x0C, S32, "duration"));
+    encodings[EVENT_OP_BGM_SETVOLUME] = eventInstructionEncoding(
+        eventOperand(0x02, SoundChannel, "channel"),
+        stored(0x03, U8, "reserved03"),
+        eventOperand(0x04, S32, "volumePercent"));
+    encodings[EVENT_OP_BGM_PAUSE] = eventInstructionEncoding(
+        eventOperand(0x02, SoundChannel, "channel"),
+        stored(0x03, U8, "reserved03"),
+        eventOperand(0x04, S32, "paused"));
+    encodings[EVENT_OP_SE_PLAY] = eventInstructionEncoding(
+        eventOperand(0x04, S32, "soundBankId"),
+        eventOperand(0x08, S32, "volume"),
+        eventOperand(0x0C, S32, "cueId"),
+        eventOperand(0x02, S16, "resultSlot"),
+        stored(0x10, U32, "reservedTail"));
+    encodings[EVENT_OP_SE_STOP] = eventInstructionEncoding(
+        eventOperand(0x02, S16, "soundSlot"),
+        eventOperand(0x04, S32, "soundId"));
+    encodings[EVENT_OP_PAD_PRESS] = eventInstructionEncoding(
+        eventOperand(0x02, U16, "resultRegister"),
+        eventOperand(0x04, GamepadButtons, "pressed"),
+        eventOperand(0x08, GamepadButtons, "held"),
+        eventOperand(0x0C, GamepadButtons, "released"),
+        eventOperand(0x10, GamepadButtons, "repeat"));
+
+    encodings[EVENT_OP_TEXTSET] = eventInstructionEncoding(
+        eventOperand(0x02, U16, "textSlot"),
+        eventOperand(0x04, F32, "x"), eventOperand(0x08, F32, "y"),
+        eventOperand(0x0C, F32, "scaleX"),
+        eventOperand(0x10, F32, "scaleY"),
+        eventOperand(0x14, PackedColorBgra8, "color"),
+        eventOperand(0x18, MessageId, "message"),
+        eventOperand(0x1C, TextAlignmentFlags, "alignment"),
+        stored(0x1D, U8, "reserved29"),
+        stored(0x1E, U16, "reserved30"),
+        eventOperand(0x20, S32, "glyphAdvance"),
+        eventOperand(0x24, S32, "lineAdvance"));
+    encodings[EVENT_OP_TEXTDISP_ON] = eventInstructionEncoding(
+        eventOperand(0x02, U16, "textSlot"));
+    encodings[EVENT_OP_TEXT_FADEIN] = eventInstructionEncoding(
+        eventOperand(0x02, U16, "textSlot"),
+        eventOperand(0x04, S32, "duration"),
+        eventOperand(0x08, PackedColorBgra8, "color"));
+    encodings[EVENT_OP_TEXT_FADEOUT] = encodings[EVENT_OP_TEXT_FADEIN];
+    encodings[EVENT_OP_TEXTCLEAR] = encodings[EVENT_OP_TEXTDISP_ON];
+    encodings[EVENT_OP_TEXT_CNG_XY] = eventInstructionEncoding(
+        eventOperand(0x02, U16, "textSlot"),
+        eventOperand(0x04, F32, "x"), eventOperand(0x08, F32, "y"),
+        eventOperand(0x0C, S32, "duration"),
+        eventOperand(0x14, TransitionFlags, "flags"),
+        eventOperand(0x10, U32, "value"));
+    encodings[EVENT_OP_TEXT_CNG_COLOR] = eventInstructionEncoding(
+        eventOperand(0x02, U16, "textSlot"),
+        eventOperand(0x04, PackedColorBgra8, "color"),
+        eventOperand(0x08, S32, "duration"),
+        eventOperand(0x0C, TransitionFlags, "flags"));
+    encodings[EVENT_OP_PROPORTIONAL] = eventInstructionEncoding(
+        eventOperand(0x02, U16, "enabled"));
+    encodings[EVENT_OP_TEXTDISP_OFF] = encodings[EVENT_OP_TEXTDISP_ON];
+    encodings[EVENT_OP_REG2STRBOX] = eventInstructionEncoding(
+        eventOperand(0x02, U16, "sourceRegister"),
+        eventOperand(0x04, S32, "stringBoxIndex"));
+
+    encodings[EVENT_OP_SVFLAG_ON] = eventInstructionEncoding(
+        eventOperand(0x02, U16, "flagId"));
+    encodings[EVENT_OP_SVFLAG_OFF] = encodings[EVENT_OP_SVFLAG_ON];
+    encodings[EVENT_OP_SVFLAG_BRON] = eventInstructionEncoding(
+        eventOperand(0x02, U16, "flagId"),
+        stored(0x04, U16, "reserved04"),
+        eventOperand(0x06, PageId, "page"));
+    encodings[EVENT_OP_SVFLAG_BROFF] = encodings[EVENT_OP_SVFLAG_BRON];
+    encodings[EVENT_OP_GET_STATUS] = eventInstructionEncoding(
+        eventOperand(0x02, U16, "status"),
+        stored(0x04, U16, "reserved04"),
+        eventOperand(0x06, U16, "register"),
+        eventOperand(0x08, S32, "value"));
+    encodings[EVENT_OP_SET_STATUS] = encodings[EVENT_OP_GET_STATUS];
+    encodings[EVENT_OP_WAIT_TEXT] = eventInstructionEncoding(
+        eventOperand(0x02, U16, "textSlot"),
+        eventOperand(0x04, S32, "duration"));
+    encodings[EVENT_OP_WAIT_BGM] = eventInstructionEncoding(
+        eventOperand(0x02, SoundChannel, "channel"),
+        stored(0x03, U8, "reserved03"));
+    encodings[EVENT_OP_WAIT_EXEC] = eventInstructionEncoding(
+        stored(0x02, U16, "reserved02"),
+        eventOperand(0x04, S32, "frameCount"));
+    encodings[EVENT_OP_STOP_EXEC] = eventInstructionEncoding(
+        stored(0x02, U16, "reserved02"),
+        eventOperand(0x04, F32, "frameCount"));
+    encodings[EVENT_OP_FADEIN] = eventInstructionEncoding(
+        eventOperand(0x04, S32, "duration"),
+        eventOperand(0x02, S16, "control"));
+    encodings[EVENT_OP_FADEOUT] = eventInstructionEncoding(
+        eventOperand(0x02, S16, "duration"),
+        stored(0x04, U16, "reserved04"),
+        eventOperand(0x06, S16, "control"));
+    encodings[EVENT_OP_FADEIN_CHK] = eventInstructionEncoding(
+        eventOperand(0x02, S16, "control"));
+    encodings[EVENT_OP_FADEOUT_CHK] = encodings[EVENT_OP_FADEIN_CHK];
+    encodings[EVENT_OP_WAIT_BT] = eventInstructionEncoding(
+        eventOperand(0x02, GamepadButtons16, "buttons"));
+
+    encodings[EVENT_OP_LABEL_SET] = eventInstructionEncoding(
+        eventOperand(0x02, S16, "labelSlot"));
+    encodings[EVENT_OP_LABEL_JUMP] = encodings[EVENT_OP_LABEL_SET];
+    encodings[EVENT_OP_FLAG_INT] = eventInstructionEncoding(
+        eventOperand(0x02, S16, "mailboxSlot"),
+        eventOperand(0x04, S32, "value"));
+    encodings[EVENT_OP_FLAG_UINT] = eventInstructionEncoding(
+        eventOperand(0x02, S16, "mailboxSlot"),
+        eventOperand(0x04, U32, "value"));
+    encodings[EVENT_OP_FLAG_FLOAT] = eventInstructionEncoding(
+        eventOperand(0x02, S16, "mailboxSlot"),
+        eventOperand(0x04, F32, "value"));
+    encodings[EVENT_OP_PAUSE] = eventInstructionEncoding(
+        eventOperand(0x02, S16, "mailboxSlot"));
+    encodings[EVENT_OP_DOOR_OPEN] = eventInstructionEncoding(
+        eventOperand(0x02, S16, "control"));
+    encodings[EVENT_OP_DOOR_CLOSE] = encodings[EVENT_OP_DOOR_OPEN];
+
+    encodings[EVENT_OP_SETREG_I] = eventInstructionEncoding(
+        eventOperand(0x02, U16, "register"),
+        eventOperand(0x04, S32, "value"));
+    encodings[EVENT_OP_SETREG_UI] = eventInstructionEncoding(
+        eventOperand(0x02, U16, "register"),
+        eventOperand(0x04, U32, "value"));
+    encodings[EVENT_OP_SETREG_S] = eventInstructionEncoding(
+        eventOperand(0x02, U16, "register"),
+        eventOperand(0x04, S16, "value"),
+        stored(0x06, U16, "ignoredUpper"));
+    encodings[EVENT_OP_SETREG_US] = eventInstructionEncoding(
+        eventOperand(0x02, U16, "register"),
+        eventOperand(0x04, U16, "value"),
+        stored(0x06, U16, "ignoredUpper"));
+    encodings[EVENT_OP_SETREG_B] = eventInstructionEncoding(
+        eventOperand(0x02, U16, "register"),
+        eventOperand(0x04, S8, "value"),
+        stored(0x05, U8, "ignoredUpper8"),
+        stored(0x06, U16, "ignoredUpper16"));
+    encodings[EVENT_OP_SETREG_UB] = eventInstructionEncoding(
+        eventOperand(0x02, U16, "register"),
+        eventOperand(0x04, U8, "value"),
+        stored(0x05, U8, "ignoredUpper8"),
+        stored(0x06, U16, "ignoredUpper16"));
+    encodings[EVENT_OP_SETREG_F] = eventInstructionEncoding(
+        eventOperand(0x02, U16, "register"),
+        eventOperand(0x04, F32, "value"));
+    encodings[EVENT_OP_SETTYPE] = eventInstructionEncoding(
+        eventOperand(0x02, U16, "register"),
+        eventOperand(0x04, VmValueType, "type"));
+    encodings[EVENT_OP_REGADDNUM_S] = eventInstructionEncoding(
+        eventOperand(0x02, U16, "register"),
+        eventOperand(0x04, S32, "value"));
+    encodings[EVENT_OP_REGSUBNUM_S] = encodings[EVENT_OP_REGADDNUM_S];
+    encodings[EVENT_OP_REGADDNUM_U] = eventInstructionEncoding(
+        eventOperand(0x02, U16, "register"),
+        eventOperand(0x04, U32, "value"));
+    encodings[EVENT_OP_REGSUBNUM_U] = encodings[EVENT_OP_REGADDNUM_U];
+    encodings[EVENT_OP_REGADDNUM_F] = eventInstructionEncoding(
+        eventOperand(0x02, U16, "register"),
+        eventOperand(0x04, F32, "value"));
+    encodings[EVENT_OP_REGSUBNUM_F] = encodings[EVENT_OP_REGADDNUM_F];
+
+    const EventInstructionEncoding registerBinary = eventInstructionEncoding(
+        eventOperand(0x02, U16, "destination"),
+        eventOperand(0x04, U16, "sourceA"),
+        eventOperand(0x06, U16, "sourceB"));
+    encodings[EVENT_OP_REGADDREG] = registerBinary;
+    encodings[EVENT_OP_REGSUBREG] = registerBinary;
+    encodings[EVENT_OP_REGMULREG] = registerBinary;
+    encodings[EVENT_OP_REGDIVREG_Q] = registerBinary;
+    encodings[EVENT_OP_REGDIVREG_R] = registerBinary;
+    encodings[EVENT_OP_REGCPYREG] = eventInstructionEncoding(
+        stored(0x02, U16, "reserved02"),
+        eventOperand(0x04, U16, "source"),
+        eventOperand(0x06, U16, "destination"));
+    encodings[EVENT_OP_RANDAM] = eventInstructionEncoding(
+        eventOperand(0x02, U16, "destination"));
+    encodings[EVENT_OP_CALLFUNC] = eventInstructionEncoding(
+        stored(0x02, U16, "reserved02"),
+        eventOperand(0x04, CallFunctionId, "function"));
+    encodings[EVENT_OP_EVENT_END] = eventInstructionEncoding(
+        stored(0x02, U16, "ignored"));
+
+    return encodings;
+}();
+
 static_assert(EVENT_OPCODE_DESCRIPTORS.size() == 0xCC);
+static_assert(EVENT_INSTRUCTION_ENCODINGS.size() == EVENT_OPCODE_DESCRIPTORS.size());
+
+constexpr std::size_t incompleteEventInstructionEncoding()
+{
+    for (std::size_t opcode = 1; opcode < EVENT_OPCODE_DESCRIPTORS.size(); ++opcode)
+    {
+        const EventOpcodeDescriptor& descriptor = EVENT_OPCODE_DESCRIPTORS[opcode];
+        const EventInstructionEncoding& encoding = EVENT_INSTRUCTION_ENCODINGS[opcode];
+        if (descriptor.wordCount == 0 || !encoding.dispatched)
+            return opcode;
+
+        std::array<bool, 64> covered{};
+        covered[0] = true;
+        covered[1] = true;
+        for (std::size_t i = 0; i < encoding.operandCount; ++i)
+        {
+            const EventEncodedOperand& operand = encoding.operands[i];
+            const std::uint8_t size = eventOperandSize(operand.encoding);
+            if (operand.byteOffset + size > descriptor.wordCount * 4)
+                return opcode;
+            for (std::uint8_t byte = 0; byte < size; ++byte)
+            {
+                if (covered[operand.byteOffset + byte])
+                    return opcode;
+                covered[operand.byteOffset + byte] = true;
+            }
+        }
+        for (std::uint8_t byte = 2; byte < descriptor.wordCount * 4; ++byte)
+        {
+            if (!covered[byte])
+                return opcode;
+        }
+    }
+    return 0;
+}
+
+static_assert(incompleteEventInstructionEncoding() == 0);

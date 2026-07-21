@@ -1,4 +1,3 @@
-#include <cctype>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -59,13 +58,6 @@ static bool writeFile(const std::filesystem::path& path, const Bytes& data)
     return true;
 }
 
-static std::string lower(std::string text)
-{
-    for (char& c : text)
-        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    return text;
-}
-
 static bool disassemble(const std::filesystem::path& inputPath,
                         const std::filesystem::path& outputPath)
 {
@@ -73,11 +65,11 @@ static bool disassemble(const std::filesystem::path& inputPath,
     if (!readFile(inputPath, data))
         return false;
 
-    ScriptBin script;
-    if (!readScriptBin(data, script))
+    EventScript script;
+    if (!readEventScript(data, script))
         return false;
 
-    const std::string source = disassembleScriptBin(script);
+    const std::string source = disassembleEventScript(script);
 
     std::ofstream output(outputPath, std::ios::binary);
     if (!output)
@@ -103,12 +95,12 @@ static bool assemble(const std::filesystem::path& inputPath,
         return false;
 
     const std::string source(reinterpret_cast<const char*>(data.data()), data.size());
-    ScriptBin script;
-    if (!assembleScriptBin(source, script))
+    EventScript script;
+    if (!assembleEventScript(source, script))
         return false;
 
     Bytes output;
-    if (!writeScriptBin(script, output))
+    if (!writeEventScript(script, output))
         return false;
 
     return writeFile(outputPath, output);
@@ -116,15 +108,19 @@ static bool assemble(const std::filesystem::path& inputPath,
 
 static void printUsage()
 {
-    printf("./script_bin --disassemble input.bin output.script\n");
-    printf("./script_bin --assemble input.script output.bin\n");
+    printf("./script_bin --disassemble input.event output.script\n");
+    printf("./script_bin --assemble input.script output.event\n");
 }
 
 static std::filesystem::path defaultOutput(const std::filesystem::path& input,
-                                           char mode)
+                                           char mode, EventScriptFormat format)
 {
     std::filesystem::path output = input;
-    output.replace_extension(mode == 'd' ? ".script" : ".bin");
+    if (mode == 'd')
+        output.replace_extension(".script");
+    else
+        output.replace_extension(format == EventScriptFormat::SmsXaf ?
+                                 ".xaf" : ".bin");
     return output;
 }
 
@@ -168,10 +164,44 @@ int main(int argc, char** argv)
     }
 
     const std::filesystem::path inputPath = argv[argument];
+    EventScriptFormat format = EventScriptFormat::Localized;
     if (mode == 0)
-        mode = lower(inputPath.extension().string()) == ".bin" ? 'd' : 'a';
+    {
+        Bytes data;
+        if (!readFile(inputPath, data))
+            return 1;
+        if (detectEventScriptFormat(data, format))
+        {
+            mode = 'd';
+        }
+        else
+        {
+            const std::string source(
+                reinterpret_cast<const char*>(data.data()), data.size());
+            if (!detectEventSourceFormat(source, format))
+            {
+                printf("ERROR: Unknown Event VM source format.\n");
+                return 1;
+            }
+            mode = 'a';
+        }
+    }
+    else if (mode == 'a' && remaining == 1)
+    {
+        Bytes data;
+        if (!readFile(inputPath, data))
+            return 1;
+        const std::string source(
+            reinterpret_cast<const char*>(data.data()), data.size());
+        if (!detectEventSourceFormat(source, format))
+        {
+            printf("ERROR: Unknown Event VM source format.\n");
+            return 1;
+        }
+    }
     const std::filesystem::path outputPath = remaining == 2 ?
-        std::filesystem::path(argv[argument + 1]) : defaultOutput(inputPath, mode);
+        std::filesystem::path(argv[argument + 1]) :
+        defaultOutput(inputPath, mode, format);
     if (inputPath.lexically_normal() == outputPath.lexically_normal())
     {
         printf("ERROR: Input and output paths are the same.\n");
