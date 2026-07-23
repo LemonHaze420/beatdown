@@ -500,20 +500,65 @@ static std::string quoteString(std::string_view value)
 {
     std::ostringstream output;
     output << '"';
-    for (unsigned char c : value)
+    for (std::size_t i = 0; i < value.size();)
     {
+        const unsigned char c = static_cast<unsigned char>(value[i]);
         switch (c)
         {
-        case '\\': output << "\\\\"; break;
-        case '"':  output << "\\\""; break;
-        case '\n': output << "\\n"; break;
-        case '\r': output << "\\r"; break;
-        case '\t': output << "\\t"; break;
+        case '\\': output << "\\\\"; ++i; break;
+        case '"':  output << "\\\""; ++i; break;
+        case '\n': output << "\\n"; ++i; break;
+        case '\r': output << "\\r"; ++i; break;
+        case '\t': output << "\\t"; ++i; break;
         default:
-            if (c < 0x20 || c >= 0x7F)
-                output << "\\x" << hex(c, 2);
-            else
+            if (c >= 0x20 && c < 0x7F)
+            {
                 output << static_cast<char>(c);
+                ++i;
+                break;
+            }
+
+            std::size_t length = 0;
+            if (c >= 0xC2 && c <= 0xDF)
+                length = 2;
+            else if (c >= 0xE0 && c <= 0xEF)
+                length = 3;
+            else if (c >= 0xF0 && c <= 0xF4)
+                length = 4;
+
+            bool valid = length != 0 && i + length <= value.size();
+            for (std::size_t j = 1; valid && j < length; ++j)
+            {
+                const unsigned char continuation =
+                    static_cast<unsigned char>(value[i + j]);
+                valid = continuation >= 0x80 && continuation <= 0xBF;
+            }
+            if (valid && length == 3)
+            {
+                const unsigned char second =
+                    static_cast<unsigned char>(value[i + 1]);
+                valid = (c != 0xE0 || second >= 0xA0) &&
+                        (c != 0xED || second <= 0x9F);
+            }
+            if (valid && length == 4)
+            {
+                const unsigned char second =
+                    static_cast<unsigned char>(value[i + 1]);
+                valid = (c != 0xF0 || second >= 0x90) &&
+                        (c != 0xF4 || second <= 0x8F);
+            }
+
+            if (valid)
+            {
+                output.write(value.data() + i,
+                             static_cast<std::streamsize>(length));
+                i += length;
+            }
+            else
+            {
+                output << "\\x" << hex(c, 2);
+                ++i;
+            }
             break;
         }
     }
