@@ -1417,7 +1417,37 @@ inline constexpr std::array<EventNamedValue, 8> EVENT_VM_VALUE_TYPE_NAMES = {{
 inline constexpr std::array<EventInstructionEncoding, 0xCC>
 EVENT_INSTRUCTION_ENCODINGS = []
 {
-    using enum EventOperandEncoding;
+    constexpr EventOperandEncoding S8 = EventOperandEncoding::S8;
+    constexpr EventOperandEncoding U8 = EventOperandEncoding::U8;
+    constexpr EventOperandEncoding S16 = EventOperandEncoding::S16;
+    constexpr EventOperandEncoding U16 = EventOperandEncoding::U16;
+    constexpr EventOperandEncoding S32 = EventOperandEncoding::S32;
+    constexpr EventOperandEncoding U32 = EventOperandEncoding::U32;
+    constexpr EventOperandEncoding F32 = EventOperandEncoding::F32;
+    constexpr EventOperandEncoding PageId = EventOperandEncoding::PageId;
+    constexpr EventOperandEncoding PageIdOrMinusOne =
+        EventOperandEncoding::PageIdOrMinusOne;
+    constexpr EventOperandEncoding MessageId = EventOperandEncoding::MessageId;
+    constexpr EventOperandEncoding ResourceId =
+        EventOperandEncoding::ResourceId;
+    constexpr EventOperandEncoding CallFunctionId =
+        EventOperandEncoding::CallFunctionId;
+    constexpr EventOperandEncoding PackedColorBgra8 =
+        EventOperandEncoding::PackedColorBgra8;
+    constexpr EventOperandEncoding TextAlignmentFlags =
+        EventOperandEncoding::TextAlignmentFlags;
+    constexpr EventOperandEncoding SoundChannel =
+        EventOperandEncoding::SoundChannel;
+    constexpr EventOperandEncoding MessageSubstitutionTarget =
+        EventOperandEncoding::MessageSubstitutionTarget;
+    constexpr EventOperandEncoding TransitionFlags =
+        EventOperandEncoding::TransitionFlags;
+    constexpr EventOperandEncoding GamepadButtons =
+        EventOperandEncoding::GamepadButtons;
+    constexpr EventOperandEncoding GamepadButtons16 =
+        EventOperandEncoding::GamepadButtons16;
+    constexpr EventOperandEncoding VmValueType =
+        EventOperandEncoding::VmValueType;
     std::array<EventInstructionEncoding, 0xCC> encodings{};
 
     for (std::uint16_t opcode = EVENT_OP_PAGESET;
