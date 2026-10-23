@@ -4,6 +4,7 @@
 #include <charconv>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <cstdint>
 #include <iomanip>
 #include <limits>
@@ -13,15 +14,12 @@
 #include <string>
 #include <string_view>
 #include <vector>
-
 #include "script_bin.h"
 #include "../common.h"
-
 std::uint8_t EventOpcodeDescriptor::byteLength() const
 {
     return static_cast<std::uint8_t>(wordCount * 4);
 }
-
 static std::string hex(std::uint64_t value, unsigned width)
 {
     std::ostringstream output;
@@ -29,21 +27,18 @@ static std::string hex(std::uint64_t value, unsigned width)
            << std::setw(static_cast<int>(width)) << value;
     return output.str();
 }
-
 static std::string_view getCallFunctionName(std::uint32_t id)
 {
     if (id < EVENT_CALL_FUNCTION_NAMES.size())
         return EVENT_CALL_FUNCTION_NAMES[id];
     return {};
 }
-
 static std::string indexName(std::string_view prefix, std::uint32_t index)
 {
     std::ostringstream output;
     output << prefix << std::setfill('0') << std::setw(4) << index;
     return output.str();
 }
-
 static std::uint32_t readInstructionValue(
     const std::vector<std::uint32_t>& code, std::uint32_t pc,
     std::uint8_t byteOffset, std::uint8_t size)
@@ -54,7 +49,6 @@ static std::uint32_t readInstructionValue(
                                (std::uint32_t{1} << (size * 8)) - 1;
     return (word >> shift) & mask;
 }
-
 static bool encodingPreservesInstruction(
     const std::vector<std::uint32_t>& code, std::uint32_t pc,
     const EventOpcodeDescriptor& descriptor,
@@ -72,7 +66,6 @@ static bool encodingPreservesInstruction(
         for (std::uint8_t byte = 0; byte < size; ++byte)
             covered[operand.byteOffset + byte] = true;
     }
-
     for (std::uint8_t byte = 2; byte < descriptor.byteLength(); ++byte)
     {
         if (!covered[byte] &&
@@ -83,7 +76,6 @@ static bool encodingPreservesInstruction(
     }
     return true;
 }
-
 template<std::size_t N>
 static std::string formatNamedValue(
     std::uint32_t value, const std::array<EventNamedValue, N>& names)
@@ -95,14 +87,12 @@ static std::string formatNamedValue(
     }
     return std::to_string(value);
 }
-
 template<std::size_t N>
 static std::string formatNamedFlags(
     std::uint32_t value, const std::array<EventNamedValue, N>& names)
 {
     if (value == 0)
         return "0";
-
     std::ostringstream output;
     bool first = true;
     std::uint32_t remaining = value;
@@ -124,26 +114,31 @@ static std::string formatNamedFlags(
     }
     return output.str();
 }
-
 static std::string formatFloat(std::uint32_t bits)
 {
-    const float value = std::bit_cast<float>(bits);
+    float value;
+    std::memcpy(&value, &bits, sizeof(value));
     if (!std::isfinite(value))
         return "f32_bits(" + std::to_string(bits) + ")";
-
     std::array<char, 64> buffer{};
+#if defined(__MINGW32__) && __GNUC__ < 11
+    const int length = std::snprintf(buffer.data(), buffer.size(), "%.9g",
+                                     static_cast<double>(value));
+    if (length <= 0 || static_cast<std::size_t>(length) >= buffer.size())
+        return "f32_bits(" + std::to_string(bits) + ")";
+    std::string text(buffer.data(), static_cast<std::size_t>(length));
+#else
     const auto result = std::to_chars(buffer.data(), buffer.data() + buffer.size(),
                                       value, std::chars_format::general);
     if (result.ec != std::errc())
         return "f32_bits(" + std::to_string(bits) + ")";
-
     std::string text(buffer.data(), result.ptr);
+#endif
     if (text.find_first_of(".eE") == std::string::npos)
         text += ".0";
     text += 'f';
     return text;
 }
-
 static std::string formatPackedColor(std::uint32_t value)
 {
     const std::uint32_t blue = value & 0xFF;
@@ -154,7 +149,6 @@ static std::string formatPackedColor(std::uint32_t value)
            std::to_string(green) + ", " + std::to_string(blue) + ", " +
            std::to_string(alpha) + ")";
 }
-
 static std::string formatEncodedOperand(
     std::uint32_t value, EventOperandEncoding encoding,
     const std::vector<std::uint32_t>* pages,
@@ -220,7 +214,6 @@ static std::string formatEncodedOperand(
     }
     return {};
 }
-
 static bool parseStringTable(const Bytes& data, std::uint64_t tableOffset,
                              std::uint32_t tableSize,
                              std::vector<std::string>& strings)
@@ -233,14 +226,12 @@ static bool parseStringTable(const Bytes& data, std::uint64_t tableOffset,
         printf("ERROR: Invalid string table.\n");
         return false;
     }
-
     const std::uint32_t firstOffset = read32(data.data() + tableOffset);
     if (firstOffset == 0 || (firstOffset & 3) != 0 || firstOffset > tableSize)
     {
         printf("ERROR: Invalid string table.\n");
         return false;
     }
-
     const std::size_t count = firstOffset / 4;
     strings.reserve(count);
     for (std::size_t i = 0; i < count; ++i)
@@ -252,7 +243,6 @@ static bool parseStringTable(const Bytes& data, std::uint64_t tableOffset,
             printf("ERROR: Invalid string offset.\n");
             return false;
         }
-
         const std::size_t begin = static_cast<std::size_t>(tableOffset + offset);
         const std::size_t end = static_cast<std::size_t>(tableOffset + tableSize);
         const auto terminator = std::find(data.begin() + begin, data.begin() + end, 0);
@@ -261,19 +251,15 @@ static bool parseStringTable(const Bytes& data, std::uint64_t tableOffset,
             printf("ERROR: Unterminated string.\n");
             return false;
         }
-
         strings.emplace_back(reinterpret_cast<const char*>(data.data() + begin),
                              static_cast<std::size_t>(terminator - (data.begin() + begin)));
     }
-
     return true;
 }
-
 bool readScriptBin(const Bytes& data, ScriptBin& script)
 {
     constexpr std::uint32_t fileHeaderSize = 4 + EVENT_LANGUAGE_COUNT * 4;
     constexpr std::uint32_t sectionHeaderSize = 0x20;
-
     if (data.size() < fileHeaderSize)
     {
         printf("ERROR: Invalid SCRIPT_BIN header.\n");
@@ -285,7 +271,6 @@ bool readScriptBin(const Bytes& data, ScriptBin& script)
         printf("ERROR: Expected six languages.\n");
         return false;
     }
-
     std::array<std::uint32_t, EVENT_LANGUAGE_COUNT> offsets{};
     std::uint32_t previous = fileHeaderSize;
     for (std::size_t i = 0; i < offsets.size(); ++i)
@@ -300,7 +285,6 @@ bool readScriptBin(const Bytes& data, ScriptBin& script)
         }
         previous = offsets[i];
     }
-
     script = {};
     LanguageSections& sections = script.languages;
     for (std::size_t i = 0; i < sections.size(); ++i)
@@ -313,7 +297,6 @@ bool readScriptBin(const Bytes& data, ScriptBin& script)
                    EVENT_LANGUAGE_CODES[i].data());
             return false;
         }
-
         const std::uint16_t eventId = read16(data.data() + start);
         const std::uint16_t pageCount = read16(data.data() + start + 2);
         const std::uint32_t codeEnd = read32(data.data() + start + 4);
@@ -325,7 +308,6 @@ bool readScriptBin(const Bytes& data, ScriptBin& script)
         const std::uint32_t reserved0x1C = read32(data.data() + start + 0x1C);
         const std::uint64_t bodyOffset = start + sectionHeaderSize;
         const std::uint64_t bodySize = end - bodyOffset;
-
         LanguageSection& section = sections[i];
         if ((eventId | pageCount | codeEnd | textCount | textOffset | reserved0x10 |
              resourceOffset | reserved0x18 | reserved0x1C) == 0)
@@ -335,21 +317,18 @@ bool readScriptBin(const Bytes& data, ScriptBin& script)
                 section.empty = true;
                 continue;
             }
-
             if ((bodySize & 3) != 0)
             {
                 printf("ERROR: Invalid headerless %s section.\n",
                        EVENT_LANGUAGE_CODES[i].data());
                 return false;
             }
-
             section.headerless = true;
             section.code.reserve(bodySize / 4);
             for (std::uint64_t offset = 0; offset < bodySize; offset += 4)
                 section.code.push_back(read32(data.data() + bodyOffset + offset));
             continue;
         }
-
         if ((codeEnd & 3) != 0 || (textOffset & 3) != 0 ||
             (resourceOffset & 3) != 0 || codeEnd > textOffset ||
             textOffset > resourceOffset || resourceOffset > bodySize)
@@ -364,7 +343,6 @@ bool readScriptBin(const Bytes& data, ScriptBin& script)
                    EVENT_LANGUAGE_CODES[i].data());
             return false;
         }
-
         const std::uint32_t pageBytes = textOffset - codeEnd;
         if (pageBytes / 4 != pageCount)
         {
@@ -372,7 +350,6 @@ bool readScriptBin(const Bytes& data, ScriptBin& script)
                    EVENT_LANGUAGE_CODES[i].data());
             return false;
         }
-
         section.eventId = eventId;
         section.code.reserve(codeEnd / 4);
         for (std::uint32_t offset = 0; offset < codeEnd; offset += 4)
@@ -380,7 +357,6 @@ bool readScriptBin(const Bytes& data, ScriptBin& script)
             const std::uint64_t word = bodyOffset + offset;
             section.code.push_back(read32(data.data() + word));
         }
-
         section.pages.reserve(pageCount);
         for (std::uint32_t page = 0; page < pageCount; ++page)
         {
@@ -394,7 +370,6 @@ bool readScriptBin(const Bytes& data, ScriptBin& script)
             }
             section.pages.push_back(target);
         }
-
         if (!parseStringTable(data, bodyOffset + textOffset,
                               resourceOffset - textOffset, section.text) ||
             !parseStringTable(data, bodyOffset + resourceOffset,
@@ -409,7 +384,6 @@ bool readScriptBin(const Bytes& data, ScriptBin& script)
                    EVENT_LANGUAGE_CODES[i].data());
             return false;
         }
-
         if (section.code.empty() ||
             (section.code.front() & 0xFFFF) != EVENT_OP_EVENT ||
             (section.code.front() >> 16) != eventId)
@@ -419,13 +393,11 @@ bool readScriptBin(const Bytes& data, ScriptBin& script)
             return false;
         }
     }
-
     bool opcodeSetKnown = false;
     for (const LanguageSection& section : sections)
     {
         if (section.empty)
             continue;
-
         EventOpcodeSet opcodeSet = EventOpcodeSet::Current;
         if (!section.headerless && !section.pages.empty())
         {
@@ -440,7 +412,6 @@ bool readScriptBin(const Bytes& data, ScriptBin& script)
                 printf("ERROR: Unknown Event VM opcode set.\n");
                 return false;
             }
-
             for (std::uint32_t target : section.pages)
             {
                 if (static_cast<std::uint16_t>(section.code[target / 4]) != marker)
@@ -450,7 +421,6 @@ bool readScriptBin(const Bytes& data, ScriptBin& script)
                 }
             }
         }
-
         std::map<std::uint32_t, bool> pageTargets;
         for (std::uint32_t target : section.pages)
             pageTargets.emplace(target, true);
@@ -483,7 +453,6 @@ bool readScriptBin(const Bytes& data, ScriptBin& script)
             }
             pc += descriptor.byteLength();
         }
-
         if (opcodeSetKnown && script.opcodeSet != opcodeSet)
         {
             printf("ERROR: Languages use different Event VM opcode sets.\n");
@@ -492,10 +461,8 @@ bool readScriptBin(const Bytes& data, ScriptBin& script)
         script.opcodeSet = opcodeSet;
         opcodeSetKnown = true;
     }
-
     return true;
 }
-
 static std::string quoteString(std::string_view value)
 {
     std::ostringstream output;
@@ -517,7 +484,6 @@ static std::string quoteString(std::string_view value)
                 ++i;
                 break;
             }
-
             std::size_t length = 0;
             if (c >= 0xC2 && c <= 0xDF)
                 length = 2;
@@ -525,7 +491,6 @@ static std::string quoteString(std::string_view value)
                 length = 3;
             else if (c >= 0xF0 && c <= 0xF4)
                 length = 4;
-
             bool valid = length != 0 && i + length <= value.size();
             for (std::size_t j = 1; valid && j < length; ++j)
             {
@@ -547,7 +512,6 @@ static std::string quoteString(std::string_view value)
                 valid = (c != 0xF0 || second >= 0x90) &&
                         (c != 0xF4 || second <= 0x8F);
             }
-
             if (valid)
             {
                 output.write(value.data() + i,
@@ -565,7 +529,6 @@ static std::string quoteString(std::string_view value)
     output << '"';
     return output.str();
 }
-
 static void disassembleCode(
     std::ostream& output, const std::vector<std::uint32_t>& code,
     const std::map<std::uint32_t, std::string>& labels,
@@ -581,7 +544,6 @@ static void disassembleCode(
         const auto label = labels.find(pc);
         if (label != labels.end())
             output << label->second << ":\n";
-
         const std::uint32_t word = code[pc / 4];
         const std::uint16_t opcode = decodeEventOpcode(
             static_cast<std::uint16_t>(word), opcodeSet);
@@ -592,7 +554,6 @@ static void disassembleCode(
             if (candidate.wordCount != 0)
                 descriptor = &candidate;
         }
-
         bool raw = descriptor == nullptr ||
                    pc + descriptor->byteLength() > code.size() * 4;
         if (!raw)
@@ -604,16 +565,13 @@ static void disassembleCode(
                 raw = true;
             }
         }
-
         if (raw)
             return;
-
         std::vector<std::string> operands;
         const EventInstructionEncoding& encoding =
             EVENT_INSTRUCTION_ENCODINGS[descriptor->opcode];
         if (!encodingPreservesInstruction(code, pc, *descriptor, encoding))
             return;
-
         bool includeStored = false;
         for (std::size_t i = 0; i < encoding.operandCount; ++i)
         {
@@ -625,7 +583,6 @@ static void disassembleCode(
                 includeStored = true;
             }
         }
-
         operands.reserve(encoding.operandCount);
         for (std::size_t i = 0; i < encoding.operandCount; ++i)
         {
@@ -640,7 +597,6 @@ static void disassembleCode(
                 messageOpcode, messagePrefix, messageCount,
                 resourcePrefix, resourceCount));
         }
-
         output << "    ";
         if (!operands.empty())
             output << std::left << std::setw(24) << descriptor->mnemonic;
@@ -656,7 +612,6 @@ static void disassembleCode(
         pc += descriptor->byteLength();
     }
 }
-
 static void disassembleBody(std::ostream& output,
                             const LanguageSection& section,
                             EventOpcodeSet opcodeSet,
@@ -671,9 +626,7 @@ static void disassembleBody(std::ostream& output,
                         EVENT_OP_NONE, {}, 0, {}, 0);
         return;
     }
-
     output << ".pages\n";
-
     std::map<std::uint32_t, std::string> labels;
     for (std::uint32_t target : section.pages)
     {
@@ -688,13 +641,11 @@ static void disassembleBody(std::ostream& output,
         output << indexName("page_", static_cast<std::uint32_t>(i)) << ": "
                << labels.at(section.pages[i]) << '\n';
     }
-
     output << "\n.code\n";
     disassembleCode(output, section.code, labels, &section.pages, opcodeSet,
                     EVENT_OP_NONE, "text_", messageCount,
                     "resource_", resourceCount);
 }
-
 static void disassembleStrings(std::ostream& output,
                                std::string_view prefix,
                                const std::vector<std::string>& strings,
@@ -706,7 +657,6 @@ static void disassembleStrings(std::ostream& output,
                << ": " << quoteString(strings[i]) << '\n';
     }
 }
-
 static void disassembleLanguage(std::ostream& output,
                                 const LanguageSection& section,
                                 EventOpcodeSet opcodeSet,
@@ -718,7 +668,6 @@ static void disassembleLanguage(std::ostream& output,
         output << ".empty\n.end\n";
         return;
     }
-
     disassembleBody(output, section, opcodeSet, section.text.size(),
                     section.resources.size());
     if (section.headerless)
@@ -726,15 +675,12 @@ static void disassembleLanguage(std::ostream& output,
         output << ".end\n";
         return;
     }
-
     output << "\n.text\n";
     disassembleStrings(output, "text_", section.text);
-
     output << "\n.resources\n";
     disassembleStrings(output, "resource_", section.resources);
     output << ".end\n";
 }
-
 static bool sameLocalizedBody(const LanguageSection& left,
                               const LanguageSection& right)
 {
@@ -742,7 +688,6 @@ static bool sameLocalizedBody(const LanguageSection& left,
            left.eventId == right.eventId &&
            left.code == right.code && left.pages == right.pages;
 }
-
 std::string disassembleScriptBin(const ScriptBin& script)
 {
     std::ostringstream output;
@@ -758,27 +703,23 @@ std::string disassembleScriptBin(const ScriptBin& script)
         output << ".format localized\n\n";
         break;
     }
-
     std::vector<std::size_t> active;
     for (std::size_t i = 0; i < script.languages.size(); ++i)
     {
         if (!script.languages[i].empty)
             active.push_back(i);
     }
-
     if (active.empty())
     {
         output << ".empty\n.end\n";
         return output.str();
     }
-
     const LanguageSection& body = script.languages[active.front()];
     const bool sharedBody = std::all_of(
         active.begin(), active.end(), [&](std::size_t language)
         {
             return sameLocalizedBody(body, script.languages[language]);
         });
-
     if (!sharedBody)
     {
         for (std::size_t i = 0; i < script.languages.size(); ++i)
@@ -790,7 +731,6 @@ std::string disassembleScriptBin(const ScriptBin& script)
         }
         return output.str();
     }
-
     if (active.size() != EVENT_LANGUAGE_COUNT)
     {
         output << ".languages";
@@ -798,7 +738,6 @@ std::string disassembleScriptBin(const ScriptBin& script)
             output << ' ' << EVENT_LANGUAGE_CODES[language];
         output << "\n\n";
     }
-
     std::size_t messageCount = 0;
     std::size_t resourceCount = 0;
     for (std::size_t language : active)
@@ -808,7 +747,6 @@ std::string disassembleScriptBin(const ScriptBin& script)
         resourceCount = std::max(resourceCount,
                                  script.languages[language].resources.size());
     }
-
     disassembleBody(output, body, script.opcodeSet,
                     messageCount, resourceCount);
     if (body.headerless)
@@ -816,7 +754,6 @@ std::string disassembleScriptBin(const ScriptBin& script)
         output << ".end\n";
         return output.str();
     }
-
     output << "\n.text\n";
     for (std::size_t i = 0; i < messageCount; ++i)
     {
@@ -831,13 +768,11 @@ std::string disassembleScriptBin(const ScriptBin& script)
             }
         }
     }
-
     const bool sharedResources = std::all_of(
         active.begin(), active.end(), [&](std::size_t language)
         {
             return script.languages[language].resources == body.resources;
         });
-
     output << "\n.resources\n";
     if (sharedResources)
     {
@@ -863,13 +798,11 @@ std::string disassembleScriptBin(const ScriptBin& script)
     output << ".end\n";
     return output.str();
 }
-
 static bool buildStringTable(const std::vector<std::string>& strings, Bytes& table)
 {
     table.clear();
     if (strings.empty())
         return true;
-
     std::uint64_t offset = strings.size() * 4;
     if (offset > 0xFFFFFFFF)
     {
@@ -895,7 +828,6 @@ static bool buildStringTable(const std::vector<std::string>& strings, Bytes& tab
         table.push_back(0);
     return true;
 }
-
 static bool buildLanguage(const LanguageSection& section, Bytes& data)
 {
     data.clear();
@@ -911,7 +843,6 @@ static bool buildLanguage(const LanguageSection& section, Bytes& data)
         data.resize(0x20);
         return true;
     }
-
     if (section.headerless)
     {
         if (!section.pages.empty() || !section.text.empty() ||
@@ -930,7 +861,6 @@ static bool buildLanguage(const LanguageSection& section, Bytes& data)
             write32(data, word);
         return true;
     }
-
     Bytes text;
     Bytes resources;
     if (!buildStringTable(section.text, text) ||
@@ -938,7 +868,6 @@ static bool buildLanguage(const LanguageSection& section, Bytes& data)
     {
         return false;
     }
-
     const std::uint64_t codeSize = section.code.size() * 4;
     const std::uint64_t textOffset = codeSize + section.pages.size() * 4;
     const std::uint64_t resourceOffset = textOffset + text.size();
@@ -950,7 +879,6 @@ static bool buildLanguage(const LanguageSection& section, Bytes& data)
         printf("ERROR: Language section is too large.\n");
         return false;
     }
-
     write16(data, section.eventId);
     write16(data, static_cast<std::uint16_t>(section.pages.size()));
     write32(data, static_cast<std::uint32_t>(codeSize));
@@ -960,7 +888,6 @@ static bool buildLanguage(const LanguageSection& section, Bytes& data)
     write32(data, static_cast<std::uint32_t>(resourceOffset));
     write32(data, 0);
     write32(data, 0);
-
     for (std::uint32_t word : section.code)
         write32(data, word);
     for (std::uint32_t page : section.pages)
@@ -969,7 +896,6 @@ static bool buildLanguage(const LanguageSection& section, Bytes& data)
     data.insert(data.end(), resources.begin(), resources.end());
     return true;
 }
-
 bool writeScriptBin(const ScriptBin& script, Bytes& output)
 {
     std::array<Bytes, EVENT_LANGUAGE_COUNT> languages;
@@ -995,16 +921,13 @@ bool writeScriptBin(const ScriptBin& script, Bytes& output)
     }
     for (const Bytes& language : languages)
         output.insert(output.end(), language.begin(), language.end());
-
     return true;
 }
-
 static bool hasLocalizedHeader(const Bytes& data)
 {
     constexpr std::uint32_t fileHeaderSize = 4 + EVENT_LANGUAGE_COUNT * 4;
     if (data.size() < fileHeaderSize || read32(data.data()) != EVENT_LANGUAGE_COUNT)
         return false;
-
     std::uint32_t previous = fileHeaderSize;
     for (std::size_t i = 0; i < EVENT_LANGUAGE_COUNT; ++i)
     {
@@ -1017,10 +940,8 @@ static bool hasLocalizedHeader(const Bytes& data)
             return false;
         previous = offset;
     }
-
     return data.size() - previous >= 0x20;
 }
-
 static bool hasValidIndexedEventCode(
     const std::uint8_t* code, std::uint32_t codeSize,
     const std::uint8_t* recordIndex, std::uint16_t recordCount,
@@ -1031,7 +952,6 @@ static bool hasValidIndexedEventCode(
     {
         return false;
     }
-
     std::uint32_t record = 0;
     std::uint32_t pc = 0;
     while (pc < codeSize)
@@ -1043,7 +963,6 @@ static bool hasValidIndexedEventCode(
         }
         if (record < recordCount && read32(recordIndex + record * 4) < pc)
             return false;
-
         const std::uint32_t word = read32(code + pc);
         const std::uint16_t opcode = static_cast<std::uint16_t>(word);
         if (opcode >= EVENT_OPCODE_DESCRIPTORS.size())
@@ -1056,10 +975,8 @@ static bool hasValidIndexedEventCode(
         }
         pc += descriptor.byteLength();
     }
-
     return record == recordCount;
 }
-
 static bool hasSmsXafHeader(const Bytes& data)
 {
     constexpr std::uint32_t headerSize = 0x20;
@@ -1068,7 +985,6 @@ static bool hasSmsXafHeader(const Bytes& data)
     {
         return false;
     }
-
     const std::uint16_t scriptId = read16(data.data());
     const std::uint16_t recordCount = read16(data.data() + 2);
     const std::uint32_t recordIndexOffset = read32(data.data() + 4);
@@ -1076,20 +992,17 @@ static bool hasSmsXafHeader(const Bytes& data)
     const std::uint32_t stringTableOffset = read32(data.data() + 0x0C);
     const std::uint32_t endOffset = read32(data.data() + 0x14);
     const std::uint8_t* body = data.data() + headerSize;
-
     if (endOffset != data.size() - headerSize || recordIndexOffset < 4 ||
         (recordIndexOffset & 3) != 0 || read32(data.data() + 0x10) != 0 ||
         read32(data.data() + 0x18) != 0 || read32(data.data() + 0x1C) != 0)
     {
         return false;
     }
-
     const std::uint64_t expectedStringTable =
         static_cast<std::uint64_t>(recordIndexOffset) +
         static_cast<std::uint64_t>(recordCount) * 4;
     if (expectedStringTable != stringTableOffset || stringTableOffset > endOffset)
         return false;
-
     std::uint32_t previous = 4;
     for (std::uint32_t i = 0; i < recordCount; ++i)
     {
@@ -1106,33 +1019,27 @@ static bool hasSmsXafHeader(const Bytes& data)
     {
         return false;
     }
-
     if (stringCount == 0)
         return stringTableOffset == endOffset;
-
     const std::uint64_t stringIndexSize =
         static_cast<std::uint64_t>(stringCount) * 4;
     if (stringIndexSize >= endOffset - stringTableOffset)
         return false;
-
     const std::uint8_t* table = body + stringTableOffset;
     std::uint32_t stringOffset = read32(table);
     if (stringOffset != stringIndexSize)
         return false;
-
     for (std::uint32_t i = 0; i < stringCount; ++i)
     {
         const std::uint32_t nextOffset = i + 1 < stringCount ?
             read32(table + (i + 1) * 4) : endOffset - stringTableOffset;
         if (stringOffset >= nextOffset || nextOffset > endOffset - stringTableOffset)
             return false;
-
         const std::uint8_t* begin = table + stringOffset;
         const std::uint8_t* end = table + nextOffset;
         const std::uint8_t* terminator = std::find(begin, end, 0);
         if (terminator == end)
             return false;
-
         if (i + 1 < stringCount)
         {
             if (terminator + 1 != end)
@@ -1149,10 +1056,8 @@ static bool hasSmsXafHeader(const Bytes& data)
         }
         stringOffset = nextOffset;
     }
-
     return true;
 }
-
 bool readSmsXaf(const Bytes& data, SmsXaf& sms)
 {
     constexpr std::uint32_t headerSize = 0x20;
@@ -1161,7 +1066,6 @@ bool readSmsXaf(const Bytes& data, SmsXaf& sms)
         printf("ERROR: Invalid SMS_XAF header or layout.\n");
         return false;
     }
-
     sms = {};
     sms.scriptId = read16(data.data());
     const std::uint16_t recordCount = read16(data.data() + 2);
@@ -1169,16 +1073,13 @@ bool readSmsXaf(const Bytes& data, SmsXaf& sms)
     const std::uint32_t stringCount = read32(data.data() + 8);
     const std::uint32_t stringTableOffset = read32(data.data() + 0x0C);
     const std::uint32_t endOffset = read32(data.data() + 0x14);
-
     const std::uint8_t* body = data.data() + headerSize;
     sms.code.reserve(recordIndexOffset / 4);
     for (std::uint32_t offset = 0; offset < recordIndexOffset; offset += 4)
         sms.code.push_back(read32(body + offset));
-
     sms.recordOffsets.reserve(recordCount);
     for (std::uint32_t i = 0; i < recordCount; ++i)
         sms.recordOffsets.push_back(read32(body + recordIndexOffset + i * 4));
-
     const std::uint8_t* table = body + stringTableOffset;
     sms.strings.reserve(stringCount);
     for (std::uint32_t i = 0; i < stringCount; ++i)
@@ -1192,10 +1093,8 @@ bool readSmsXaf(const Bytes& data, SmsXaf& sms)
             reinterpret_cast<const char*>(table + begin),
             static_cast<std::size_t>(terminator - (table + begin)));
     }
-
     return true;
 }
-
 bool writeSmsXaf(const SmsXaf& sms, Bytes& output)
 {
     if (sms.recordOffsets.size() > 0xFFFF ||
@@ -1211,11 +1110,9 @@ bool writeSmsXaf(const SmsXaf& sms, Bytes& output)
         printf("ERROR: Invalid leading SMS_XAF EVENT.\n");
         return false;
     }
-
     Bytes body;
     for (std::uint32_t word : sms.code)
         write32(body, word);
-
     std::uint32_t previous = 0;
     for (std::size_t i = 0; i < sms.recordOffsets.size(); ++i)
     {
@@ -1228,7 +1125,6 @@ bool writeSmsXaf(const SmsXaf& sms, Bytes& output)
         }
         previous = offset;
     }
-
     const std::uint32_t recordIndexOffset =
         static_cast<std::uint32_t>(body.size());
     if (sms.recordOffsets.size() > (0xFFFFFFFF - body.size()) / 4)
@@ -1246,7 +1142,6 @@ bool writeSmsXaf(const SmsXaf& sms, Bytes& output)
         printf("ERROR: Invalid SMS_XAF Event VM code.\n");
         return false;
     }
-
     if (body.size() > 0xFFFFFFFF)
     {
         printf("ERROR: SMS_XAF record index is too large.\n");
@@ -1254,7 +1149,6 @@ bool writeSmsXaf(const SmsXaf& sms, Bytes& output)
     }
     const std::uint32_t stringTableOffset =
         static_cast<std::uint32_t>(body.size());
-
     Bytes strings;
     for (const std::string& value : sms.strings)
     {
@@ -1271,7 +1165,6 @@ bool writeSmsXaf(const SmsXaf& sms, Bytes& output)
         return false;
     }
     body.insert(body.end(), strings.begin(), strings.end());
-
     output.clear();
     write16(output, sms.scriptId);
     write16(output, static_cast<std::uint16_t>(sms.recordOffsets.size()));
@@ -1285,12 +1178,10 @@ bool writeSmsXaf(const SmsXaf& sms, Bytes& output)
     output.insert(output.end(), body.begin(), body.end());
     return true;
 }
-
 std::string disassembleSmsXaf(const SmsXaf& sms)
 {
     std::ostringstream output;
     output << ".format sms_xaf\n\n.records\n";
-
     std::map<std::uint32_t, std::string> labels;
     for (std::uint32_t offset : sms.recordOffsets)
     {
@@ -1305,13 +1196,11 @@ std::string disassembleSmsXaf(const SmsXaf& sms)
         output << indexName("record_", static_cast<std::uint32_t>(i)) << ": "
                << labels.at(sms.recordOffsets[i]) << '\n';
     }
-
     output << "\n.code\n";
     disassembleCode(output, sms.code, labels, nullptr,
                     EventOpcodeSet::Current,
                     EVENT_OP_EXF_LOG_MESSAGE,
                     "string_", sms.strings.size(), {}, 0);
-
     output << "\n.strings\n";
     for (std::size_t i = 0; i < sms.strings.size(); ++i)
     {
@@ -1321,18 +1210,15 @@ std::string disassembleSmsXaf(const SmsXaf& sms)
     output << ".end\n";
     return output.str();
 }
-
 bool detectEventScriptFormat(const Bytes& data, EventScriptFormat& format)
 {
     const bool localized = hasLocalizedHeader(data);
     const bool sms = hasSmsXafHeader(data);
     if (localized == sms)
         return false;
-
     format = localized ? EventScriptFormat::Localized : EventScriptFormat::SmsXaf;
     return true;
 }
-
 bool readEventScript(const Bytes& data, EventScript& script)
 {
     EventScriptFormat format;
@@ -1341,19 +1227,16 @@ bool readEventScript(const Bytes& data, EventScript& script)
         printf("ERROR: Unrecognized Event VM container.\n");
         return false;
     }
-
     script = {};
     script.format = format;
     return format == EventScriptFormat::Localized ?
         readScriptBin(data, script.localized) : readSmsXaf(data, script.sms);
 }
-
 bool writeEventScript(const EventScript& script, Bytes& data)
 {
     return script.format == EventScriptFormat::Localized ?
         writeScriptBin(script.localized, data) : writeSmsXaf(script.sms, data);
 }
-
 std::string disassembleEventScript(const EventScript& script)
 {
     return script.format == EventScriptFormat::Localized ?

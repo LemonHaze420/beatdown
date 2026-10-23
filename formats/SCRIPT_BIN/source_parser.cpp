@@ -11,9 +11,7 @@
 #include <string_view>
 #include <utility>
 #include <vector>
-
 #include "source_parser.h"
-
 static std::string trim(std::string_view text)
 {
     std::size_t begin = 0;
@@ -22,34 +20,27 @@ static std::string trim(std::string_view text)
     {
         ++begin;
     }
-
     std::size_t end = text.size();
     while (end > begin &&
            std::isspace(static_cast<unsigned char>(text[end - 1])))
     {
         --end;
     }
-
     return std::string(text.substr(begin, end - begin));
 }
-
 static bool parseNumber(const std::string& text, std::uint32_t maximum,
                         std::uint32_t& output)
 {
     if (text.empty() || text[0] == '-')
         return false;
-
     errno = 0;
     char* end = nullptr;
     const unsigned long long value = std::strtoull(text.c_str(), &end, 0);
-
     if (errno == ERANGE || end != text.c_str() + text.size() || value > maximum)
         return false;
-
     output = static_cast<std::uint32_t>(value);
     return true;
 }
-
 static std::string stripComment(std::string_view line)
 {
     bool quoted = false;
@@ -75,10 +66,8 @@ static std::string stripComment(std::string_view line)
         if (!quoted && (c == ';' || c == '#'))
             return std::string(line.substr(0, i));
     }
-
     return std::string(line);
 }
-
 static bool validLabel(std::string_view label)
 {
     if (label.empty() ||
@@ -86,7 +75,6 @@ static bool validLabel(std::string_view label)
     {
         return false;
     }
-
     for (std::size_t i = 1; i < label.size(); ++i)
     {
         const unsigned char c = static_cast<unsigned char>(label[i]);
@@ -95,7 +83,6 @@ static bool validLabel(std::string_view label)
     }
     return true;
 }
-
 static const EventOpcodeDescriptor* findOpcode(std::string_view mnemonic)
 {
     for (const auto& descriptor : EVENT_OPCODE_DESCRIPTORS)
@@ -105,7 +92,6 @@ static const EventOpcodeDescriptor* findOpcode(std::string_view mnemonic)
     }
     return nullptr;
 }
-
 static bool parseCallFunction(std::string_view text, std::uint32_t& id)
 {
     for (std::size_t i = 0; i < EVENT_CALL_FUNCTION_NAMES.size(); ++i)
@@ -119,13 +105,11 @@ static bool parseCallFunction(std::string_view text, std::uint32_t& id)
     }
     return false;
 }
-
 static bool parseIndexName(std::string_view text, std::string_view prefix,
                            std::uint32_t& index)
 {
     if (!text.starts_with(prefix) || text.size() == prefix.size())
         return false;
-
     std::uint64_t value = 0;
     for (const unsigned char c : text.substr(prefix.size()))
     {
@@ -138,12 +122,10 @@ static bool parseIndexName(std::string_view text, std::string_view prefix,
     index = static_cast<std::uint32_t>(value);
     return true;
 }
-
 static bool parseQuotedString(const std::string& text, std::string& value)
 {
     if (text.size() < 2 || text.front() != '"')
         return false;
-
     value.clear();
     std::size_t i = 1;
     for (; i < text.size(); ++i)
@@ -159,7 +141,6 @@ static bool parseQuotedString(const std::string& text, std::string& value)
             value.push_back(static_cast<char>(c));
             continue;
         }
-
         if (++i >= text.size())
             return false;
         switch (text[i])
@@ -188,20 +169,16 @@ static bool parseQuotedString(const std::string& text, std::string& value)
             return false;
         }
     }
-
     if (i == 0 || i > text.size() || text[i - 1] != '"' || !trim(text.substr(i)).empty())
         return false;
-
     return true;
 }
-
 static bool splitOperands(const std::string& text,
                           std::vector<std::string>& operands)
 {
     operands.clear();
     if (trim(text).empty())
         return true;
-
     std::size_t begin = 0;
     unsigned depth = 0;
     for (std::size_t i = 0; i <= text.size(); ++i)
@@ -222,7 +199,6 @@ static bool splitOperands(const std::string& text,
             continue;
         if (i == text.size() && depth != 0)
             return false;
-
         const std::string operand = trim(text.substr(begin, i - begin));
         if (operand.empty())
             return false;
@@ -231,7 +207,6 @@ static bool splitOperands(const std::string& text,
     }
     return true;
 }
-
 static bool parseSignedBits(const std::string& text, std::uint8_t size,
                             std::uint32_t& output)
 {
@@ -255,7 +230,6 @@ static bool parseSignedBits(const std::string& text, std::uint8_t size,
     }
     return parseNumber(text, mask, output);
 }
-
 static bool parseFloatBits(const std::string& text, std::uint32_t& output)
 {
     if (text.starts_with("f32_bits(") && text.ends_with(')'))
@@ -273,13 +247,11 @@ static bool parseFloatBits(const std::string& text, std::uint32_t& output)
     {
         return parseNumber(text, 0xFFFFFFFF, output);
     }
-
     std::string valueText = text;
     if (!valueText.empty() && (valueText.back() == 'f' || valueText.back() == 'F'))
         valueText.pop_back();
     if (valueText.empty())
         return false;
-
     errno = 0;
     char* end = nullptr;
     const float value = std::strtof(valueText.c_str(), &end);
@@ -288,7 +260,6 @@ static bool parseFloatBits(const std::string& text, std::uint32_t& output)
     output = std::bit_cast<std::uint32_t>(value);
     return true;
 }
-
 template<std::size_t N>
 static bool parseNamedValue(const std::string& text,
                             const std::array<EventNamedValue, N>& names,
@@ -304,7 +275,6 @@ static bool parseNamedValue(const std::string& text,
     }
     return parseNumber(text, maximum, output);
 }
-
 template<std::size_t N>
 static bool parseNamedFlags(const std::string& text,
                             const std::array<EventNamedValue, N>& names,
@@ -326,12 +296,10 @@ static bool parseNamedFlags(const std::string& text,
     }
     return false;
 }
-
 static bool parsePackedColor(const std::string& text, std::uint32_t& output)
 {
     if (!text.starts_with("rgba8(") || !text.ends_with(')'))
         return parseNumber(text, 0xFFFFFFFF, output);
-
     std::vector<std::string> components;
     if (!splitOperands(text.substr(6, text.size() - 7), components) ||
         components.size() != 4)
@@ -347,7 +315,6 @@ static bool parsePackedColor(const std::string& text, std::uint32_t& output)
     output = rgba[2] | rgba[1] << 8 | rgba[0] << 16 | rgba[3] << 24;
     return true;
 }
-
 static bool parseEncodedOperand(
     const std::string& text, EventOperandEncoding encoding,
     std::size_t pageCount, std::string_view pagePrefix,
@@ -416,7 +383,6 @@ static bool parseEncodedOperand(
     }
     return false;
 }
-
 static void writeInstructionValue(std::vector<std::uint32_t>& words,
                                   std::uint8_t byteOffset,
                                   std::uint8_t size, std::uint32_t value)
@@ -428,7 +394,6 @@ static void writeInstructionValue(std::vector<std::uint32_t>& words,
     words[wordIndex] &= ~(mask << shift);
     words[wordIndex] |= (value & mask) << shift;
 }
-
 static bool encodeEventInstruction(
     const EventOpcodeDescriptor& descriptor,
     const std::vector<std::string>& operands,
@@ -441,14 +406,12 @@ static bool encodeEventInstruction(
         EVENT_INSTRUCTION_ENCODINGS[descriptor.opcode];
     if (!encoding.dispatched)
         return false;
-
     std::size_t requiredCount = 0;
     for (std::size_t i = 0; i < encoding.operandCount; ++i)
         requiredCount += !encoding.operands[i].omitWhenZero;
     const bool includeStored = operands.size() == encoding.operandCount;
     if (!includeStored && operands.size() != requiredCount)
         return false;
-
     words.assign(descriptor.wordCount, 0);
     words[0] = encodeEventOpcode(descriptor.opcode, opcodeSet);
     std::size_t sourceOperand = 0;
@@ -471,7 +434,6 @@ static bool encodeEventInstruction(
     }
     return true;
 }
-
 static const char* appendEventInstruction(
     const std::string& line, std::vector<std::uint32_t>& code,
     EventOpcodeSet opcodeSet,
@@ -490,11 +452,9 @@ static const char* appendEventInstruction(
         return "Opcode is not available in this Event VM opcode set";
     if (code.size() > 0xFFFFFFFF / 4 - descriptor->wordCount)
         return "Code is too large";
-
     std::vector<std::string> operands;
     if (!splitOperands(argumentText, operands))
         return "Invalid operand list";
-
     std::vector<std::uint32_t> words;
     if (encodeEventInstruction(*descriptor, operands, opcodeSet,
                                pageCount, pagePrefix,
@@ -506,13 +466,11 @@ static const char* appendEventInstruction(
     }
     return "Invalid operands";
 }
-
 SourceParser::SourceParser(std::string_view input)
     : source(input)
 {
     activeLanguages.fill(true);
 }
-
 bool SourceParser::parse(ScriptBin& output)
 {
     std::istringstream input(source);
@@ -525,7 +483,6 @@ bool SourceParser::parse(ScriptBin& output)
         if (!parseLine(trim(stripComment(rawLine))))
             return false;
     }
-
     if (form == Form::Shared)
     {
         if (!sharedEnded)
@@ -542,18 +499,15 @@ bool SourceParser::parse(ScriptBin& output)
     {
         return compile_error("Missing localized script body");
     }
-
     output.opcodeSet = opcodeSet;
     output.languages = sections;
     return true;
 }
-
 bool SourceParser::compile_error(const char* message) const
 {
     printf("ERROR: Line %zu: %s.\n", lineNumber, message);
     return false;
 }
-
 int SourceParser::languageIndex(std::string_view code)
 {
     for (std::size_t i = 0; i < EVENT_LANGUAGE_CODES.size(); ++i)
@@ -563,18 +517,15 @@ int SourceParser::languageIndex(std::string_view code)
     }
     return -1;
 }
-
 LanguageSection* SourceParser::current()
 {
     if (currentLanguage >= 0)
         return &sections[static_cast<std::size_t>(currentLanguage)];
     if (form == Form::Shared && !sharedEnded)
         return &sharedSection;
-
     compile_error("Directive outside a script body");
     return nullptr;
 }
-
 bool SourceParser::selectSharedForm()
 {
     if (form == Form::Explicit)
@@ -584,7 +535,6 @@ bool SourceParser::selectSharedForm()
     form = Form::Shared;
     return true;
 }
-
 bool SourceParser::beginLanguage(const std::string& code)
 {
     if (form == Form::Shared)
@@ -596,7 +546,6 @@ bool SourceParser::beginLanguage(const std::string& code)
         return compile_error("Unknown language");
     if (seen[static_cast<std::size_t>(index)])
         return compile_error("Duplicate language");
-
     form = Form::Explicit;
     seen[static_cast<std::size_t>(index)] = true;
     currentLanguage = index;
@@ -605,12 +554,10 @@ bool SourceParser::beginLanguage(const std::string& code)
     pageLabels.clear();
     return true;
 }
-
 bool SourceParser::finishSection(LanguageSection& section)
 {
     if (section.empty && section.headerless)
         return compile_error("Script body cannot be empty and headerless");
-
     if (section.headerless)
     {
         if (!pageLabels.empty() || !section.pages.empty() ||
@@ -642,26 +589,21 @@ bool SourceParser::finishSection(LanguageSection& section)
     {
         return compile_error("Empty script body contains data");
     }
-
     return true;
 }
-
 bool SourceParser::endLanguage()
 {
     LanguageSection* section = current();
     if (section == nullptr || !finishSection(*section))
         return false;
-
     currentLanguage = -1;
     part = Part::None;
     return true;
 }
-
 bool SourceParser::endShared()
 {
     if (form != Form::Shared || sharedEnded)
         return compile_error("Invalid .end directive");
-
     for (std::size_t i = 0; i < sections.size(); ++i)
     {
         if ((!sections[i].text.empty() || !sections[i].resources.empty()) &&
@@ -672,7 +614,6 @@ bool SourceParser::endShared()
     }
     if (!finishSection(sharedSection))
         return false;
-
     for (std::size_t i = 0; i < sections.size(); ++i)
     {
         std::vector<std::string> text = std::move(sections[i].text);
@@ -681,19 +622,16 @@ bool SourceParser::endShared()
         sections[i].empty = true;
         if (!activeLanguages[i])
             continue;
-
         sections[i] = sharedSection;
         if (textForm == StringTableForm::Localized)
             sections[i].text = std::move(text);
         if (resourceForm == StringTableForm::Localized)
             sections[i].resources = std::move(resources);
     }
-
     sharedEnded = true;
     part = Part::None;
     return true;
 }
-
 bool SourceParser::parseLanguages(const std::string& argument)
 {
     if (!selectSharedForm() || activeLanguagesSeen || argument.empty() ||
@@ -704,7 +642,6 @@ bool SourceParser::parseLanguages(const std::string& argument)
     {
         return compile_error("Invalid .languages directive");
     }
-
     activeLanguages.fill(false);
     std::istringstream input(argument);
     std::string code;
@@ -720,14 +657,12 @@ bool SourceParser::parseLanguages(const std::string& argument)
     activeLanguagesSeen = true;
     return true;
 }
-
 bool SourceParser::parseDirective(const std::string& line)
 {
     const std::size_t space = line.find_first_of(" \t");
     const std::string directive = line.substr(0, space);
     const std::string argument = space == std::string::npos ?
                                  std::string() : trim(line.substr(space + 1));
-
     if (directive == ".format")
     {
         if (form != Form::Unknown || formatSeen)
@@ -745,31 +680,25 @@ bool SourceParser::parseDirective(const std::string& line)
         formatSeen = true;
         return true;
     }
-
     if (directive == ".language")
     {
         if (argument.empty())
             return compile_error(".language requires a code");
         return beginLanguage(argument);
     }
-
     if (directive == ".languages")
         return parseLanguages(argument);
-
     if (form == Form::Unknown && !selectSharedForm())
         return false;
-
     if (directive == ".end")
     {
         if (!argument.empty())
             return compile_error(".end does not take an argument");
         return form == Form::Shared ? endShared() : endLanguage();
     }
-
     LanguageSection* section = current();
     if (section == nullptr)
         return false;
-
     if (directive == ".empty")
     {
         if (!argument.empty())
@@ -810,41 +739,34 @@ bool SourceParser::parseDirective(const std::string& line)
     {
         return compile_error("Unknown directive");
     }
-
     return true;
 }
-
 bool SourceParser::parseInstruction(const std::string& line)
 {
     LanguageSection* section = current();
     if (section == nullptr)
         return false;
-
     const char* error = appendEventInstruction(
         line, section->code, opcodeSet,
         pageLabels.size(), "page_", EVENT_OP_NONE,
         "text_", "resource_");
     return error == nullptr ? true : compile_error(error);
 }
-
 bool SourceParser::parseStringEntry(const std::string& line,
                                     std::string_view prefix)
 {
     const std::size_t colon = line.find(':');
     if (colon == std::string::npos)
         return compile_error("Invalid string entry");
-
     const std::string name = trim(line.substr(0, colon));
     std::string value;
     if (!parseQuotedString(trim(line.substr(colon + 1)), value))
         return compile_error("Invalid quoted string");
-
     LanguageSection* section = current();
     if (section == nullptr)
         return false;
     std::vector<std::string>& common = part == Part::Text ?
         section->text : section->resources;
-
     if (form == Form::Explicit)
     {
         std::uint32_t index = 0;
@@ -853,7 +775,6 @@ bool SourceParser::parseStringEntry(const std::string& line,
         common.push_back(std::move(value));
         return true;
     }
-
     StringTableForm& tableForm = part == Part::Text ? textForm : resourceForm;
     std::uint32_t index = 0;
     if (parseIndexName(name, prefix, index))
@@ -864,7 +785,6 @@ bool SourceParser::parseStringEntry(const std::string& line,
         common.push_back(std::move(value));
         return true;
     }
-
     if (name.size() < 3 || name[name.size() - 3] != '_')
         return compile_error("Invalid localized string entry");
     const int language = languageIndex(
@@ -875,7 +795,6 @@ bool SourceParser::parseStringEntry(const std::string& line,
     {
         return compile_error("Invalid localized string entry");
     }
-
     std::vector<std::string>& localized = part == Part::Text ?
         sections[static_cast<std::size_t>(language)].text :
         sections[static_cast<std::size_t>(language)].resources;
@@ -885,21 +804,17 @@ bool SourceParser::parseStringEntry(const std::string& line,
     localized.push_back(std::move(value));
     return true;
 }
-
 bool SourceParser::parseLine(const std::string& line)
 {
     if (line.empty())
         return true;
     if (line[0] == '.')
         return parseDirective(line);
-
     if (form == Form::Unknown && !selectSharedForm())
         return false;
-
     LanguageSection* section = current();
     if (section == nullptr)
         return false;
-
     switch (part)
     {
     case Part::Pages:
@@ -918,7 +833,6 @@ bool SourceParser::parseLine(const std::string& line)
         pageLabels.push_back(target);
         return true;
     }
-
     case Part::Code:
         if (line.back() != ':')
             return parseInstruction(line);
@@ -934,28 +848,22 @@ bool SourceParser::parseLine(const std::string& line)
             }
             return true;
         }
-
     case Part::Text:
         return parseStringEntry(line, "text_");
-
     case Part::Resources:
         return parseStringEntry(line, "resource_");
-
     default:
         return compile_error("Content outside a section");
     }
 }
-
 bool assembleScriptBin(std::string_view source, ScriptBin& script)
 {
     return SourceParser(source).parse(script);
 }
-
 SmsSourceParser::SmsSourceParser(std::string_view input)
     : source(input)
 {
 }
-
 bool SmsSourceParser::parse(SmsXaf& output)
 {
     std::istringstream input(source);
@@ -968,7 +876,6 @@ bool SmsSourceParser::parse(SmsXaf& output)
         if (!parseLine(trim(stripComment(rawLine))))
             return false;
     }
-
     if (part != Part::Done)
         return compile_error("Missing .end");
     if (!formatSeen || !recordsSeen || !codeSeen || !stringsSeen)
@@ -979,7 +886,6 @@ bool SmsSourceParser::parse(SmsXaf& output)
         return compile_error("SMS code must begin with EVENT");
     }
     sms.scriptId = static_cast<std::uint16_t>(sms.code.front() >> 16);
-
     const std::uint32_t codeSize =
         static_cast<std::uint32_t>(sms.code.size() * 4);
     std::uint32_t previous = 0;
@@ -997,24 +903,20 @@ bool SmsSourceParser::parse(SmsXaf& output)
         sms.recordOffsets.push_back(offset);
         previous = offset;
     }
-
     output = sms;
     return true;
 }
-
 bool SmsSourceParser::compile_error(const char* message) const
 {
     printf("ERROR: Line %zu: %s.\n", lineNumber, message);
     return false;
 }
-
 bool SmsSourceParser::parseDirective(const std::string& line)
 {
     const std::size_t space = line.find_first_of(" \t");
     const std::string directive = line.substr(0, space);
     const std::string argument = space == std::string::npos ?
                                  std::string() : trim(line.substr(space + 1));
-
     if (directive == ".format")
     {
         if (part != Part::Header || formatSeen || argument != "sms_xaf")
@@ -1024,7 +926,6 @@ bool SmsSourceParser::parseDirective(const std::string& line)
         formatSeen = true;
         return true;
     }
-
     if (directive == ".records")
     {
         if (part != Part::Header || !formatSeen || recordsSeen ||
@@ -1036,7 +937,6 @@ bool SmsSourceParser::parseDirective(const std::string& line)
         part = Part::Records;
         return true;
     }
-
     if (directive == ".code")
     {
         if (part != Part::Records || codeSeen || !argument.empty())
@@ -1047,7 +947,6 @@ bool SmsSourceParser::parseDirective(const std::string& line)
         part = Part::Code;
         return true;
     }
-
     if (directive == ".strings")
     {
         if (part != Part::Code || !argument.empty() || stringsSeen)
@@ -1056,7 +955,6 @@ bool SmsSourceParser::parseDirective(const std::string& line)
         part = Part::Strings;
         return true;
     }
-
     if (directive == ".end")
     {
         if (part != Part::Strings || !argument.empty())
@@ -1064,16 +962,13 @@ bool SmsSourceParser::parseDirective(const std::string& line)
         part = Part::Done;
         return true;
     }
-
     return compile_error("Unknown directive");
 }
-
 bool SmsSourceParser::parseRecord(const std::string& line)
 {
     const std::size_t colon = line.find(':');
     if (colon == std::string::npos)
         return compile_error("Invalid record entry");
-
     const std::string name = trim(line.substr(0, colon));
     const std::string target = trim(line.substr(colon + 1));
     std::uint32_t index = 0;
@@ -1086,7 +981,6 @@ bool SmsSourceParser::parseRecord(const std::string& line)
     recordLabels.push_back(target);
     return true;
 }
-
 bool SmsSourceParser::parseCode(const std::string& line)
 {
     if (line.back() != ':')
@@ -1097,7 +991,6 @@ bool SmsSourceParser::parseCode(const std::string& line)
             "string_", {});
         return error == nullptr ? true : compile_error(error);
     }
-
     if (sms.code.size() > 0xFFFFFFFF / 4)
         return compile_error("Code is too large");
     const std::string label = trim(line.substr(0, line.size() - 1));
@@ -1109,18 +1002,15 @@ bool SmsSourceParser::parseCode(const std::string& line)
     }
     return true;
 }
-
 bool SmsSourceParser::parseString(const std::string& line)
 {
     const std::size_t colon = line.find(':');
     if (colon == std::string::npos)
         return compile_error("Invalid string entry");
-
     const std::string name = trim(line.substr(0, colon));
     std::uint32_t index = 0;
     if (!parseIndexName(name, "string_", index) || index != sms.strings.size())
         return compile_error("Invalid string entry");
-
     std::string value;
     if (!parseQuotedString(trim(line.substr(colon + 1)), value) ||
         value.find('\0') != std::string::npos)
@@ -1130,7 +1020,6 @@ bool SmsSourceParser::parseString(const std::string& line)
     sms.strings.push_back(value);
     return true;
 }
-
 bool SmsSourceParser::parseLine(const std::string& line)
 {
     if (line.empty())
@@ -1147,12 +1036,10 @@ bool SmsSourceParser::parseLine(const std::string& line)
         return parseString(line);
     return compile_error("Content outside an SMS section");
 }
-
 bool assembleSmsXaf(std::string_view source, SmsXaf& sms)
 {
     return SmsSourceParser(source).parse(sms);
 }
-
 bool detectEventSourceFormat(std::string_view source, EventScriptFormat& format)
 {
     std::istringstream input{std::string(source)};
@@ -1164,14 +1051,12 @@ bool detectEventSourceFormat(std::string_view source, EventScriptFormat& format)
         const std::string line = trim(stripComment(rawLine));
         if (line.empty())
             continue;
-
         const std::size_t space = line.find_first_of(" \t");
         if (line.substr(0, space) != ".format")
         {
             format = EventScriptFormat::Localized;
             return true;
         }
-
         const std::string argument = space == std::string::npos ?
             std::string() : trim(line.substr(space + 1));
         if (argument == "localized" || argument == "localized_exf50" ||
@@ -1183,11 +1068,9 @@ bool detectEventSourceFormat(std::string_view source, EventScriptFormat& format)
             return false;
         return true;
     }
-
     format = EventScriptFormat::Localized;
     return true;
 }
-
 bool assembleEventScript(std::string_view source, EventScript& script)
 {
     EventScriptFormat format;
@@ -1196,7 +1079,6 @@ bool assembleEventScript(std::string_view source, EventScript& script)
         printf("ERROR: Unknown Event VM source format.\n");
         return false;
     }
-
     script = {};
     script.format = format;
     return format == EventScriptFormat::Localized ?

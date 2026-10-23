@@ -1,5 +1,4 @@
 #pragma once
-
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -7,16 +6,12 @@
 #include <string>
 #include <string_view>
 #include <vector>
-
 #include "script_bin.h"
-
 class SourceParser
 {
 public:
     explicit SourceParser(std::string_view source);
-
     bool parse(ScriptBin& output);
-
 private:
     enum class Form
     {
@@ -24,7 +19,6 @@ private:
         Shared,
         Explicit,
     };
-
     enum class Part
     {
         None,
@@ -33,14 +27,12 @@ private:
         Text,
         Resources,
     };
-
     enum class StringTableForm
     {
         None,
         Shared,
         Localized,
     };
-
     std::string source;
     std::size_t lineNumber = 0;
     Form form = Form::Unknown;
@@ -58,7 +50,6 @@ private:
     bool sharedEnded = false;
     StringTableForm textForm = StringTableForm::None;
     StringTableForm resourceForm = StringTableForm::None;
-
     bool compile_error(const char* message) const;
     static int languageIndex(std::string_view code);
     LanguageSection* current();
@@ -74,14 +65,11 @@ private:
                           std::string_view prefix);
     bool parseLine(const std::string& line);
 };
-
 class SmsSourceParser
 {
 public:
     explicit SmsSourceParser(std::string_view source);
-
     bool parse(SmsXaf& output);
-
 private:
     enum class Part
     {
@@ -91,7 +79,6 @@ private:
         Strings,
         Done,
     };
-
     std::string source;
     std::size_t lineNumber = 0;
     Part part = Part::Header;
@@ -102,7 +89,6 @@ private:
     bool stringsSeen = false;
     std::map<std::string, std::uint32_t> labels;
     std::vector<std::string> recordLabels;
-
     bool compile_error(const char* message) const;
     bool parseDirective(const std::string& line);
     bool parseRecord(const std::string& line);
@@ -110,7 +96,6 @@ private:
     bool parseString(const std::string& line);
     bool parseLine(const std::string& line);
 };
-
 bool assembleScriptBin(std::string_view source, ScriptBin& script);
 bool assembleSmsXaf(std::string_view source, SmsXaf& sms);
 bool detectEventSourceFormat(std::string_view source,

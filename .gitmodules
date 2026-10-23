@@ -1,0 +1,3 @@
+[submodule "libs/librw"]
+    path = libs/librw
+    url = https://github.com/aap/librw

@@ -6,22 +6,18 @@
 #include <string>
 #include <system_error>
 #include <vector>
-
 #include "xaf.h"
-
 static std::string lower(std::string text)
 {
     for (char& c : text)
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     return text;
 }
-
 static bool inspect(const std::filesystem::path& inputPath)
 {
     XafArchive xaf;
     if (!readXaf(inputPath, xaf))
         return false;
-
     printf("file: %s\n", inputPath.string().c_str());
     printf("magic: 0x%08" PRIx32 "\n", xaf.header.magic);
     printf("flags: 0x%08" PRIx32 "\n", xaf.header.flags);
@@ -33,7 +29,6 @@ static bool inspect(const std::filesystem::path& inputPath)
     printf("fileSize: %" PRIu64 "\n", xaf.fileSize);
     printf("tableSize: %" PRIu64 "\n", xaf.tableSize);
     printf("payloadEnd: %" PRIu64 "\n", xaf.payloadEnd);
-
     if (!xaf.descs.empty())
     {
         const XafDescription& last = xaf.descs.back();
@@ -42,7 +37,6 @@ static bool inspect(const std::filesystem::path& inputPath)
         printf("lastPayloadEnd: %" PRIu64 "\n",
                static_cast<std::uint64_t>(last.offset) + last.length);
     }
-
     if (xaf.auxOffset != 0)
     {
         printf("auxTailOffset: %" PRIu64 "\n", xaf.auxOffset);
@@ -53,7 +47,6 @@ static bool inspect(const std::filesystem::path& inputPath)
         printf("auxTailOffset: none\n");
         printf("auxTailSize: 0\n");
     }
-
     bool heading = false;
     for (std::size_t i = 0; i < xaf.entries.size(); ++i)
     {
@@ -69,10 +62,8 @@ static bool inspect(const std::filesystem::path& inputPath)
                " path=%s\n", i, entry.metaOffset, entry.metaLength,
                reinterpret_cast<const char*>(entry.rawPath.data()));
     }
-
     return true;
 }
-
 static bool extract(const std::filesystem::path& inputPath,
                     const std::filesystem::path& outputPath)
 {
@@ -85,10 +76,8 @@ static bool extract(const std::filesystem::path& inputPath,
                inputPath.string().c_str(), error.message().c_str());
         return false;
     }
-
     if (!std::filesystem::is_directory(status))
         return extractXaf(inputPath, outputPath);
-
     std::vector<std::filesystem::path> archives;
     std::filesystem::directory_iterator iterator(inputPath, error);
     const std::filesystem::directory_iterator end;
@@ -109,7 +98,6 @@ static bool extract(const std::filesystem::path& inputPath,
                inputPath.string().c_str(), error.message().c_str());
         return false;
     }
-
     std::sort(archives.begin(), archives.end());
     if (archives.empty())
     {
@@ -124,14 +112,12 @@ static bool extract(const std::filesystem::path& inputPath,
     }
     return true;
 }
-
 static void printUsage()
 {
     printf("./xaf input.xaf\n");
     printf("./xaf extract input.xaf output_directory\n");
     printf("./xaf replace input.xaf archive_path replacement_file output.xaf\n");
 }
-
 int main(int argc, char** argv)
 {
     if (argc == 1)
@@ -139,7 +125,6 @@ int main(int argc, char** argv)
         printUsage();
         return 0;
     }
-
     const std::string command = argv[1];
     if (argc == 2 && (command == "-h" || command == "--help"))
     {
@@ -163,7 +148,6 @@ int main(int argc, char** argv)
     }
     if (argc == 2)
         return inspect(argv[1]) ? 0 : 1;
-
     printUsage();
     return 1;
 }

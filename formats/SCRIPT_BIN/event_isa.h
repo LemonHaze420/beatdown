@@ -1,10 +1,8 @@
 #pragma once
-
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <string_view>
-
 enum EventLanguage : std::uint8_t
 {
     EVENT_LANGUAGE_JAPANESE = 0,
@@ -15,7 +13,6 @@ enum EventLanguage : std::uint8_t
     EVENT_LANGUAGE_ITALIAN = 5,
     EVENT_LANGUAGE_COUNT = 6,
 };
-
 enum EventCallFunctionId : std::uint32_t
 {
     EVENT_CALLFUNC_NONE = 0,
@@ -27,7 +24,6 @@ enum EventCallFunctionId : std::uint32_t
     EVENT_CALLFUNC_EVALUATION_SCREEN = 6,
     EVENT_CALLFUNC_COUNT = 7,
 };
-
 enum EventOpcode : std::uint16_t
 {
     EVENT_OP_NONE = 0x00,
@@ -235,14 +231,12 @@ enum EventOpcode : std::uint16_t
     EVENT_OP_CALLFUNC = 0xCA,
     EVENT_OP_EVENT_END = 0xCB,
 };
-
 enum class EventOpcodeSet : std::uint8_t
 {
     Current,
     Legacy50Exf,
     Legacy51Exf,
 };
-
 constexpr std::uint16_t eventOpcodeShift(EventOpcodeSet opcodeSet)
 {
     switch (opcodeSet)
@@ -255,12 +249,10 @@ constexpr std::uint16_t eventOpcodeShift(EventOpcodeSet opcodeSet)
         return 0;
     }
 }
-
 constexpr std::uint16_t eventPageSetOpcode(EventOpcodeSet opcodeSet)
 {
     return EVENT_OP_PAGESET - eventOpcodeShift(opcodeSet);
 }
-
 constexpr std::uint16_t decodeEventOpcode(std::uint16_t serializedOpcode,
                                           EventOpcodeSet opcodeSet)
 {
@@ -268,7 +260,6 @@ constexpr std::uint16_t decodeEventOpcode(std::uint16_t serializedOpcode,
     return serializedOpcode >= pageSet ?
         serializedOpcode + eventOpcodeShift(opcodeSet) : serializedOpcode;
 }
-
 constexpr bool supportsEventOpcode(EventOpcode opcode,
                                    EventOpcodeSet opcodeSet)
 {
@@ -276,7 +267,6 @@ constexpr bool supportsEventOpcode(EventOpcode opcode,
         return true;
     return opcode < eventPageSetOpcode(opcodeSet) || opcode >= EVENT_OP_PAGESET;
 }
-
 constexpr std::uint16_t encodeEventOpcode(EventOpcode opcode,
                                           EventOpcodeSet opcodeSet)
 {
@@ -284,20 +274,17 @@ constexpr std::uint16_t encodeEventOpcode(EventOpcode opcode,
         static_cast<std::uint16_t>(opcode) - eventOpcodeShift(opcodeSet) :
         static_cast<std::uint16_t>(opcode);
 }
-
 enum EventTextAlignmentFlags : std::uint8_t
 {
     EVENT_TEXT_ALIGN_CENTER = 0x01,
     EVENT_TEXT_ALIGN_RIGHT = 0x04,
 };
-
 enum EventSoundChannel : std::uint8_t
 {
     EVENT_SOUND_CHANNEL_0 = 0,
     EVENT_SOUND_CHANNEL_1 = 1,
     EVENT_SOUND_CHANNEL_2 = 2,
 };
-
 enum EventMessageSubstitutionTarget : std::uint32_t
 {
     EVENT_MESSAGE_SUBSTITUTION_CHARACTER_NAME = 0,
@@ -305,13 +292,11 @@ enum EventMessageSubstitutionTarget : std::uint32_t
     EVENT_MESSAGE_SUBSTITUTION_SECONDARY_NAME_TABLE = 2,
     EVENT_MESSAGE_SUBSTITUTION_DECIMAL_NUMBER = 3,
 };
-
 enum EventTransitionFlags : std::uint32_t
 {
     EVENT_TRANSITION_DEFER_UNTIL_CALC_START = 0x01,
     EVENT_TRANSITION_WAIT_UNTIL_IDLE_BEFORE_START = 0x02,
 };
-
 enum EventVmValueType : std::uint32_t
 {
     EVENT_VM_S32 = 0,
@@ -323,7 +308,6 @@ enum EventVmValueType : std::uint32_t
     EVENT_VM_F32 = 6,
     EVENT_VM_UNUSED = 0xFF,
 };
-
 enum GamepadButton : std::uint32_t
 {
     GAMEPAD_SQUARE = 0x00001,
@@ -347,7 +331,6 @@ enum GamepadButton : std::uint32_t
     GAMEPAD_LSTICK_UP = 0x40000,
     GAMEPAD_LSTICK_DOWN = 0x80000,
 };
-
 enum EventOperandTypeCode : std::uint8_t
 {
     EVENT_OPERAND_NONE = 0x01,
@@ -417,13 +400,11 @@ enum EventOperandTypeCode : std::uint8_t
     EVENT_OPERAND_EXF_OPTION = 0x41,
     EVENT_OPERAND_NPC_BEFORE_PARAMETER = 0x42,
 };
-
 struct EventOperandMetadata
 {
     EventOperandTypeCode typeCode;
     std::uint8_t wordIndex;
 };
-
 struct EventOpcodeDescriptor
 {
     EventOpcode opcode;
@@ -431,10 +412,8 @@ struct EventOpcodeDescriptor
     std::uint16_t operandOffset;
     std::uint8_t operandCount;
     std::string_view mnemonic;
-
     std::uint8_t byteLength() const;
 };
-
 enum class EventOperandEncoding : std::uint8_t
 {
     S8,
@@ -458,7 +437,6 @@ enum class EventOperandEncoding : std::uint8_t
     GamepadButtons16,
     VmValueType,
 };
-
 struct EventEncodedOperand
 {
     std::uint8_t byteOffset;
@@ -466,14 +444,12 @@ struct EventEncodedOperand
     std::string_view name;
     bool omitWhenZero = false;
 };
-
 struct EventInstructionEncoding
 {
     std::array<EventEncodedOperand, 16> operands{};
     std::uint8_t operandCount = 0;
     bool dispatched = false;
 };
-
 template<typename... Operands>
 constexpr EventInstructionEncoding eventInstructionEncoding(Operands... operands)
 {
@@ -486,7 +462,6 @@ constexpr EventInstructionEncoding eventInstructionEncoding(Operands... operands
         encoding.operands[i] = fields[i];
     return encoding;
 }
-
 constexpr EventEncodedOperand eventOperand(std::uint8_t byteOffset,
                                            EventOperandEncoding encoding,
                                            std::string_view name,
@@ -494,7 +469,6 @@ constexpr EventEncodedOperand eventOperand(std::uint8_t byteOffset,
 {
     return {byteOffset, encoding, name, omitWhenZero};
 }
-
 constexpr std::uint8_t eventOperandSize(EventOperandEncoding encoding)
 {
     switch (encoding)
@@ -514,13 +488,11 @@ constexpr std::uint8_t eventOperandSize(EventOperandEncoding encoding)
         return 4;
     }
 }
-
 struct EventNamedValue
 {
     std::uint32_t value;
     std::string_view name;
 };
-
 inline constexpr std::array<std::string_view, EVENT_LANGUAGE_COUNT> EVENT_LANGUAGE_NAMES = {{
     "Japanese",
     "English",
@@ -529,7 +501,6 @@ inline constexpr std::array<std::string_view, EVENT_LANGUAGE_COUNT> EVENT_LANGUA
     "Spanish",
     "Italian",
 }};
-
 inline constexpr std::array<std::string_view, EVENT_LANGUAGE_COUNT> EVENT_LANGUAGE_CODES = {{
     "ja",
     "en",
@@ -538,7 +509,6 @@ inline constexpr std::array<std::string_view, EVENT_LANGUAGE_COUNT> EVENT_LANGUA
     "es",
     "it",
 }};
-
 inline constexpr std::array<std::string_view, EVENT_CALLFUNC_COUNT>
 EVENT_CALL_FUNCTION_NAMES = {{
     "EVENT_CALLFUNC_NONE",
@@ -549,7 +519,6 @@ EVENT_CALL_FUNCTION_NAMES = {{
     "EVENT_CALLFUNC_AREA_INFORMATION",
     "EVENT_CALLFUNC_EVALUATION_SCREEN",
 }};
-
 inline constexpr std::array<std::string_view, EVENT_CALLFUNC_COUNT>
 EVENT_CALL_CALLBACK_NAMES = {{
     "none",
@@ -560,7 +529,6 @@ EVENT_CALL_CALLBACK_NAMES = {{
     "updateAreaInformationScreen",
     "updateEventEvaluationScreen",
 }};
-
 inline constexpr std::array<std::string_view, 67> EVENT_OPERAND_TYPE_NAMES = {{
     "invalid",
     "none",
@@ -630,7 +598,6 @@ inline constexpr std::array<std::string_view, 67> EVENT_OPERAND_TYPE_NAMES = {{
     "exf_option",
     "npc_before_parameter",
 }};
-
 inline constexpr std::array<EventOperandMetadata, 509> EVENT_OPERAND_METADATA = {{
     {EVENT_OPERAND_NONE, 0},
     {EVENT_OPERAND_NONE, 0},
@@ -1142,7 +1109,6 @@ inline constexpr std::array<EventOperandMetadata, 509> EVENT_OPERAND_METADATA = 
     {EVENT_OPERAND_FUNCTION_ID, 1},
     {EVENT_OPERAND_NONE, 0},
 }};
-
 inline constexpr std::array<EventOpcodeDescriptor, 0xCC> EVENT_OPCODE_DESCRIPTORS = {{
     {EVENT_OP_NONE, 0, 0, 0, "NONE"},
     {EVENT_OP_EVENT, 1, 0, 1, "EVENT"},
@@ -1349,7 +1315,6 @@ inline constexpr std::array<EventOpcodeDescriptor, 0xCC> EVENT_OPCODE_DESCRIPTOR
     {EVENT_OP_CALLFUNC, 2, 507, 1, "CALLFUNC"},
     {EVENT_OP_EVENT_END, 1, 508, 1, "EVENT_END"},
 }};
-
 inline constexpr std::array<EventNamedValue, 20> EVENT_GAMEPAD_BUTTON_NAMES = {{
     {GAMEPAD_SQUARE, "GAMEPAD_SQUARE"},
     {GAMEPAD_CIRCLE, "GAMEPAD_CIRCLE"},
@@ -1372,18 +1337,15 @@ inline constexpr std::array<EventNamedValue, 20> EVENT_GAMEPAD_BUTTON_NAMES = {{
     {GAMEPAD_LSTICK_UP, "GAMEPAD_LSTICK_UP"},
     {GAMEPAD_LSTICK_DOWN, "GAMEPAD_LSTICK_DOWN"},
 }};
-
 inline constexpr std::array<EventNamedValue, 2> EVENT_TEXT_ALIGNMENT_NAMES = {{
     {EVENT_TEXT_ALIGN_CENTER, "EVENT_TEXT_ALIGN_CENTER"},
     {EVENT_TEXT_ALIGN_RIGHT, "EVENT_TEXT_ALIGN_RIGHT"},
 }};
-
 inline constexpr std::array<EventNamedValue, 3> EVENT_SOUND_CHANNEL_NAMES = {{
     {EVENT_SOUND_CHANNEL_0, "EVENT_SOUND_CHANNEL_0"},
     {EVENT_SOUND_CHANNEL_1, "EVENT_SOUND_CHANNEL_1"},
     {EVENT_SOUND_CHANNEL_2, "EVENT_SOUND_CHANNEL_2"},
 }};
-
 inline constexpr std::array<EventNamedValue, 4>
 EVENT_MESSAGE_SUBSTITUTION_TARGET_NAMES = {{
     {EVENT_MESSAGE_SUBSTITUTION_CHARACTER_NAME,
@@ -1395,14 +1357,12 @@ EVENT_MESSAGE_SUBSTITUTION_TARGET_NAMES = {{
     {EVENT_MESSAGE_SUBSTITUTION_DECIMAL_NUMBER,
      "EVENT_MESSAGE_SUBSTITUTION_DECIMAL_NUMBER"},
 }};
-
 inline constexpr std::array<EventNamedValue, 2> EVENT_TRANSITION_FLAG_NAMES = {{
     {EVENT_TRANSITION_DEFER_UNTIL_CALC_START,
      "EVENT_TRANSITION_DEFER_UNTIL_CALC_START"},
     {EVENT_TRANSITION_WAIT_UNTIL_IDLE_BEFORE_START,
      "EVENT_TRANSITION_WAIT_UNTIL_IDLE_BEFORE_START"},
 }};
-
 inline constexpr std::array<EventNamedValue, 8> EVENT_VM_VALUE_TYPE_NAMES = {{
     {EVENT_VM_S32, "S32"},
     {EVENT_VM_U32, "U32"},
@@ -1413,7 +1373,6 @@ inline constexpr std::array<EventNamedValue, 8> EVENT_VM_VALUE_TYPE_NAMES = {{
     {EVENT_VM_F32, "F32"},
     {EVENT_VM_UNUSED, "UNUSED"},
 }};
-
 inline constexpr std::array<EventInstructionEncoding, 0xCC>
 EVENT_INSTRUCTION_ENCODINGS = []
 {
@@ -1449,19 +1408,16 @@ EVENT_INSTRUCTION_ENCODINGS = []
     constexpr EventOperandEncoding VmValueType =
         EventOperandEncoding::VmValueType;
     std::array<EventInstructionEncoding, 0xCC> encodings{};
-
     for (std::uint16_t opcode = EVENT_OP_PAGESET;
          opcode <= EVENT_OP_EVENT_END; ++opcode)
     {
         encodings[opcode].dispatched = true;
     }
-
     const auto stored = [](std::uint8_t offset, EventOperandEncoding type,
                            std::string_view name)
     {
         return eventOperand(offset, type, name, true);
     };
-
     const auto operandEncoding = [](EventOperandTypeCode type)
     {
         switch (type)
@@ -1517,7 +1473,6 @@ EVENT_INSTRUCTION_ENCODINGS = []
             return S32;
         }
     };
-
     const auto isHalfwordOperand = [](EventOperandTypeCode type)
     {
         switch (type)
@@ -1542,7 +1497,6 @@ EVENT_INSTRUCTION_ENCODINGS = []
             return false;
         }
     };
-
     for (std::uint16_t opcode = EVENT_OP_EXF_SET_POS;
          opcode <= EVENT_OP_EXF_MESTURN; ++opcode)
     {
@@ -1553,14 +1507,12 @@ EVENT_INSTRUCTION_ENCODINGS = []
         std::array<bool, 64> covered{};
         covered[0] = true;
         covered[1] = true;
-
         for (std::size_t i = 0; i < descriptor.operandCount; ++i)
         {
             const EventOperandMetadata& metadata =
                 EVENT_OPERAND_METADATA[descriptor.operandOffset + i];
             if (metadata.typeCode == EVENT_OPERAND_NONE)
                 continue;
-
             std::uint8_t offset = metadata.wordIndex * 4;
             const bool halfword = isHalfwordOperand(metadata.typeCode);
             if (halfword)
@@ -1574,7 +1526,6 @@ EVENT_INSTRUCTION_ENCODINGS = []
                 else
                     offset += 2;
             }
-
             const EventOperandEncoding type = operandEncoding(metadata.typeCode);
             encoding.operands[encoding.operandCount++] =
                 eventOperand(offset, type,
@@ -1583,7 +1534,6 @@ EVENT_INSTRUCTION_ENCODINGS = []
             for (std::uint8_t byte = 0; byte < size; ++byte)
                 covered[offset + byte] = true;
         }
-
         const std::uint8_t byteLength = descriptor.wordCount * 4;
         for (std::uint8_t offset = 2; offset < byteLength;)
         {
@@ -1592,7 +1542,6 @@ EVENT_INSTRUCTION_ENCODINGS = []
                 ++offset;
                 continue;
             }
-
             EventOperandEncoding type = U8;
             std::uint8_t size = 1;
             if ((offset & 3) == 0 && offset + 4 <= byteLength &&
@@ -1609,7 +1558,6 @@ EVENT_INSTRUCTION_ENCODINGS = []
                 type = U16;
                 size = 2;
             }
-
             encoding.operands[encoding.operandCount++] =
                 stored(offset, type, "storage");
             for (std::uint8_t byte = 0; byte < size; ++byte)
@@ -1618,25 +1566,21 @@ EVENT_INSTRUCTION_ENCODINGS = []
         }
         encodings[opcode] = encoding;
     }
-
     encodings[EVENT_OP_EVENT] = eventInstructionEncoding(
         eventOperand(0x02, U16, "eventId"));
     encodings[EVENT_OP_END_EVENT] = eventInstructionEncoding(
         stored(0x02, U16, "ignored"));
-
     encodings[EVENT_OP_EXF_SET_MESNAMES] = eventInstructionEncoding(
         stored(0x02, U16, "reserved02"),
         eventOperand(0x04, MessageSubstitutionTarget, "target"),
         eventOperand(0x08, S32, "fallback"),
         stored(0x0C, U16, "reserved12"),
         eventOperand(0x0E, U16, "sourceRegister"));
-
     encodings[EVENT_OP_PAGESET] = eventInstructionEncoding(
         eventOperand(0x02, PageId, "page"));
     encodings[EVENT_OP_END_PAGESET] = eventInstructionEncoding(
         eventOperand(0x02, PageIdOrMinusOne, "page"));
     encodings[EVENT_OP_PAGE_JUMP] = encodings[EVENT_OP_PAGESET];
-
     const auto jumpCompare = [&](EventOperandEncoding comparison)
     {
         EventInstructionEncoding encoding = eventInstructionEncoding(
@@ -1672,7 +1616,6 @@ EVENT_INSTRUCTION_ENCODINGS = []
     encodings[EVENT_OP_JUMP_BNEUB] = encodings[EVENT_OP_JUMP_BEQUB];
     encodings[EVENT_OP_JUMP_BEQF] = jumpCompare(F32);
     encodings[EVENT_OP_JUMP_BNEF] = encodings[EVENT_OP_JUMP_BEQF];
-
     const EventInstructionEncoding unaryJump = eventInstructionEncoding(
         eventOperand(0x02, PageId, "page"),
         stored(0x04, U16, "reserved04"),
@@ -1681,7 +1624,6 @@ EVENT_INSTRUCTION_ENCODINGS = []
     encodings[EVENT_OP_JNZ] = unaryJump;
     encodings[EVENT_OP_JMI] = unaryJump;
     encodings[EVENT_OP_JPZ] = unaryJump;
-
     encodings[EVENT_OP_TEX_LOAD] = eventInstructionEncoding(
         eventOperand(0x02, S16, "textureSlot"),
         eventOperand(0x04, ResourceId, "resource"),
@@ -1749,7 +1691,6 @@ EVENT_INSTRUCTION_ENCODINGS = []
         eventOperand(0x0C, F32, "scaleX"),
         eventOperand(0x10, F32, "scaleY"),
         eventOperand(0x14, GamepadButtons, "buttons"));
-
     encodings[EVENT_OP_BGM_PLAY] = eventInstructionEncoding(
         eventOperand(0x02, SoundChannel, "channel"),
         stored(0x03, U8, "reserved03"),
@@ -1786,7 +1727,6 @@ EVENT_INSTRUCTION_ENCODINGS = []
         eventOperand(0x08, GamepadButtons, "held"),
         eventOperand(0x0C, GamepadButtons, "released"),
         eventOperand(0x10, GamepadButtons, "repeat"));
-
     encodings[EVENT_OP_TEXTSET] = eventInstructionEncoding(
         eventOperand(0x02, U16, "textSlot"),
         eventOperand(0x04, F32, "x"), eventOperand(0x08, F32, "y"),
@@ -1824,7 +1764,6 @@ EVENT_INSTRUCTION_ENCODINGS = []
     encodings[EVENT_OP_REG2STRBOX] = eventInstructionEncoding(
         eventOperand(0x02, U16, "sourceRegister"),
         eventOperand(0x04, S32, "stringBoxIndex"));
-
     encodings[EVENT_OP_SVFLAG_ON] = eventInstructionEncoding(
         eventOperand(0x02, U16, "flagId"));
     encodings[EVENT_OP_SVFLAG_OFF] = encodings[EVENT_OP_SVFLAG_ON];
@@ -1863,7 +1802,6 @@ EVENT_INSTRUCTION_ENCODINGS = []
     encodings[EVENT_OP_FADEOUT_CHK] = encodings[EVENT_OP_FADEIN_CHK];
     encodings[EVENT_OP_WAIT_BT] = eventInstructionEncoding(
         eventOperand(0x02, GamepadButtons16, "buttons"));
-
     encodings[EVENT_OP_LABEL_SET] = eventInstructionEncoding(
         eventOperand(0x02, S16, "labelSlot"));
     encodings[EVENT_OP_LABEL_JUMP] = encodings[EVENT_OP_LABEL_SET];
@@ -1881,7 +1819,6 @@ EVENT_INSTRUCTION_ENCODINGS = []
     encodings[EVENT_OP_DOOR_OPEN] = eventInstructionEncoding(
         eventOperand(0x02, S16, "control"));
     encodings[EVENT_OP_DOOR_CLOSE] = encodings[EVENT_OP_DOOR_OPEN];
-
     encodings[EVENT_OP_SETREG_I] = eventInstructionEncoding(
         eventOperand(0x02, U16, "register"),
         eventOperand(0x04, S32, "value"));
@@ -1924,7 +1861,6 @@ EVENT_INSTRUCTION_ENCODINGS = []
         eventOperand(0x02, U16, "register"),
         eventOperand(0x04, F32, "value"));
     encodings[EVENT_OP_REGSUBNUM_F] = encodings[EVENT_OP_REGADDNUM_F];
-
     const EventInstructionEncoding registerBinary = eventInstructionEncoding(
         eventOperand(0x02, U16, "destination"),
         eventOperand(0x04, U16, "sourceA"),
@@ -1945,13 +1881,10 @@ EVENT_INSTRUCTION_ENCODINGS = []
         eventOperand(0x04, CallFunctionId, "function"));
     encodings[EVENT_OP_EVENT_END] = eventInstructionEncoding(
         stored(0x02, U16, "ignored"));
-
     return encodings;
 }();
-
 static_assert(EVENT_OPCODE_DESCRIPTORS.size() == 0xCC);
 static_assert(EVENT_INSTRUCTION_ENCODINGS.size() == EVENT_OPCODE_DESCRIPTORS.size());
-
 constexpr std::size_t incompleteEventInstructionEncoding()
 {
     for (std::size_t opcode = 1; opcode < EVENT_OPCODE_DESCRIPTORS.size(); ++opcode)
@@ -1960,7 +1893,6 @@ constexpr std::size_t incompleteEventInstructionEncoding()
         const EventInstructionEncoding& encoding = EVENT_INSTRUCTION_ENCODINGS[opcode];
         if (descriptor.wordCount == 0 || !encoding.dispatched)
             return opcode;
-
         std::array<bool, 64> covered{};
         covered[0] = true;
         covered[1] = true;
@@ -1985,5 +1917,4 @@ constexpr std::size_t incompleteEventInstructionEncoding()
     }
     return 0;
 }
-
 static_assert(incompleteEventInstructionEncoding() == 0);

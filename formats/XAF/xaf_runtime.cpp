@@ -1,39 +1,31 @@
 #include "xaf_runtime.h"
-
 #include <stdio.h>
 #include <string.h>
-
 namespace
 {
-
 const uint32_t XAF_MAGIC = 0x00464158;
 const uint32_t XAF_HEADER_SIZE = 0x40;
 const uint32_t XAF_DESCRIPTION_SIZE = 8;
 const uint32_t XAF_ENTRY_SIZE = 0x104;
 const uint32_t XAF_PATH_SIZE = 0xfc;
-
 uint32_t read32(const uint8_t* data)
 {
     uint32_t value;
     memcpy(&value, data, sizeof(value));
     return value;
 }
-
 bool readAt(FILE* file, uint32_t offset, void* data, size_t size)
 {
     return fseek(file, static_cast<long>(offset), SEEK_SET) == 0 &&
            fread(data, 1, size, file) == size;
 }
-
 }
-
 bool
 listXafEntries(const char* archivePath, std::vector<XafEntryInfo>& entries)
 {
     entries.clear();
     if(archivePath == NULL)
         return false;
-
     FILE* file = fopen(archivePath, "rb");
     if(file == NULL)
         return false;
@@ -44,17 +36,18 @@ listXafEntries(const char* archivePath, std::vector<XafEntryInfo>& entries)
         return false;
     }
 
+    const uint32_t countPlusOne = read32(header + 0x28);
     const uint32_t count = read32(header + 0x2c);
     const uint32_t archiveSize = read32(header + 0x30);
     const uint64_t tableSize = XAF_HEADER_SIZE +
         static_cast<uint64_t>(count) *
         (XAF_DESCRIPTION_SIZE + XAF_ENTRY_SIZE);
-    if(count == 0 || count > 0x10000 || tableSize > archiveSize)
+    if(count == 0 || count > 0x10000 ||
+       countPlusOne != count + 1 || tableSize > archiveSize)
     {
         fclose(file);
         return false;
     }
-
     entries.reserve(count);
     const uint32_t entryTable = XAF_HEADER_SIZE + count * XAF_DESCRIPTION_SIZE;
     for(uint32_t i = 0; i < count; ++i)
@@ -87,7 +80,6 @@ listXafEntries(const char* archivePath, std::vector<XafEntryInfo>& entries)
     fclose(file);
     return true;
 }
-
 bool
 readXafEntry(const char* archivePath, const XafEntryInfo& entry,
              std::vector<uint8_t>& data)
@@ -105,7 +97,6 @@ readXafEntry(const char* archivePath, const XafEntryInfo& entry,
         data.clear();
     return ok;
 }
-
 bool
 readXafEntry(const char* archivePath, const char* entryName,
              std::vector<uint8_t>& data)
@@ -113,14 +104,12 @@ readXafEntry(const char* archivePath, const char* entryName,
     data.clear();
     if(archivePath == NULL || entryName == NULL)
         return false;
-
     FILE* file = fopen(archivePath, "rb");
     if(file == NULL)
     {
         printf("ERROR: Could not open XAF archive '%s'.\n", archivePath);
         return false;
     }
-
     uint8_t header[XAF_HEADER_SIZE];
     if(!readAt(file, 0, header, sizeof(header)) || read32(header) != XAF_MAGIC)
     {
@@ -128,7 +117,6 @@ readXafEntry(const char* archivePath, const char* entryName,
         fclose(file);
         return false;
     }
-
     const uint32_t entryCount = read32(header + 0x2c);
     const uint32_t archiveSize = read32(header + 0x30);
     const uint64_t tableSize = XAF_HEADER_SIZE +
@@ -140,7 +128,6 @@ readXafEntry(const char* archivePath, const char* entryName,
         fclose(file);
         return false;
     }
-
     uint32_t foundIndex = entryCount;
     uint8_t entry[XAF_ENTRY_SIZE];
     const uint32_t entryTable =
@@ -157,7 +144,6 @@ readXafEntry(const char* archivePath, const char* entryName,
             break;
         }
     }
-
     if(foundIndex == entryCount)
     {
         printf("ERROR: XAF entry '%s' was not found in '%s'.\n",
@@ -165,7 +151,6 @@ readXafEntry(const char* archivePath, const char* entryName,
         fclose(file);
         return false;
     }
-
     uint8_t description[XAF_DESCRIPTION_SIZE];
     if(!readAt(file,
                XAF_HEADER_SIZE + foundIndex * XAF_DESCRIPTION_SIZE,
@@ -176,7 +161,6 @@ readXafEntry(const char* archivePath, const char* entryName,
         fclose(file);
         return false;
     }
-
     const uint32_t offset = read32(description);
     const uint32_t length = read32(description + 4);
     if(length == 0 || static_cast<uint64_t>(offset) + length > archiveSize)
@@ -185,7 +169,6 @@ readXafEntry(const char* archivePath, const char* entryName,
         fclose(file);
         return false;
     }
-
     data.resize(length);
     const bool read = readAt(file, offset, data.data(), data.size());
     fclose(file);
@@ -197,14 +180,11 @@ readXafEntry(const char* archivePath, const char* entryName,
     }
     return true;
 }
-
 bool
 readXafEntryByIndex(const char* archivePath, uint32_t entryIndex,
                     std::vector<uint8_t>& data)
 {
-    // The runtime addresses stage resources by archive index, not by name
-    // (`BeginXafEntryLoadByIndex` 0x0029b270), so the index path is primary
-    // for stage loading.
+
     std::vector<XafEntryInfo> entries;
     if(!listXafEntries(archivePath, entries) || entryIndex >= entries.size())
     {
@@ -214,7 +194,6 @@ readXafEntryByIndex(const char* archivePath, uint32_t entryIndex,
     }
     return readXafEntry(archivePath, entries[entryIndex], data);
 }
-
 bool
 extractPackedBundleEntry(const std::vector<uint8_t>& bundle,
                          uint32_t entryIndex,
@@ -223,12 +202,10 @@ extractPackedBundleEntry(const std::vector<uint8_t>& bundle,
     data.clear();
     if(bundle.size() < 8)
         return false;
-
     const uint32_t entryCount = read32(bundle.data());
     const uint64_t tableEnd = 4 + static_cast<uint64_t>(entryCount) * 4;
     if(entryIndex >= entryCount || tableEnd > bundle.size())
         return false;
-
     const uint32_t encodedOffset = read32(bundle.data() + 4 + entryIndex * 4);
     const uint32_t storage = encodedOffset >> 28;
     const uint32_t offset = encodedOffset & 0x0fffffff;
@@ -237,7 +214,6 @@ extractPackedBundleEntry(const std::vector<uint8_t>& bundle,
         end = read32(bundle.data() + 8 + entryIndex * 4) & 0x0fffffff;
     if(offset < tableEnd || offset >= end || end > bundle.size())
         return false;
-
     if(storage == 0)
     {
         data.assign(bundle.begin() + offset, bundle.begin() + end);
@@ -245,12 +221,10 @@ extractPackedBundleEntry(const std::vector<uint8_t>& bundle,
     }
     if(storage != 8 || end - offset < 4)
         return false;
-
     const uint32_t outputSize = read32(bundle.data() + offset);
     if(outputSize == 0 || outputSize > 0x1000000)
         return false;
     data.resize(outputSize);
-
     uint8_t window[0x1000];
     memset(window, 0, sizeof(window));
     uint32_t writeCursor = 0xfee;
@@ -266,7 +240,6 @@ extractPackedBundleEntry(const std::vector<uint8_t>& bundle,
                 goto fail;
             flags = bundle[source++] | 0xff00;
         }
-
         if((flags & 1) != 0)
         {
             if(source >= end)
@@ -294,7 +267,6 @@ extractPackedBundleEntry(const std::vector<uint8_t>& bundle,
         }
     }
     return true;
-
 fail:
     data.clear();
     return false;

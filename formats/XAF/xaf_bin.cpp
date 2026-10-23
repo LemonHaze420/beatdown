@@ -12,22 +12,17 @@
 #include <string_view>
 #include <system_error>
 #include <vector>
-
 #include "xaf.h"
 #include "../common.h"
-
 constexpr std::size_t COPY_BUFFER_SIZE = 0x10000;
-
 static std::uint64_t alignUp(std::uint64_t value, std::uint64_t alignment)
 {
     return (value + alignment - 1) & ~(alignment - 1);
 }
-
 static bool copyBytes(std::istream& input, std::ostream& output,
                       std::uint64_t count)
 {
     std::array<std::uint8_t, COPY_BUFFER_SIZE> buffer{};
-
     while (count > 0)
     {
         const std::size_t size = count > buffer.size()
@@ -40,7 +35,6 @@ static bool copyBytes(std::istream& input, std::ostream& output,
             printf("ERROR: Could not read file data.\n");
             return false;
         }
-
         output.write(reinterpret_cast<const char*>(buffer.data()),
                      static_cast<std::streamsize>(size));
         if (!output)
@@ -52,7 +46,6 @@ static bool copyBytes(std::istream& input, std::ostream& output,
     }
     return true;
 }
-
 static bool copyRange(std::ifstream& input, std::uint64_t offset,
                       std::ostream& output, std::uint64_t count)
 {
@@ -65,11 +58,9 @@ static bool copyRange(std::ifstream& input, std::uint64_t offset,
     }
     return copyBytes(input, output, count);
 }
-
 static bool writePadding(std::ostream& output, std::uint64_t count)
 {
     std::array<std::uint8_t, 0x1000> zeros{};
-
     while (count > 0)
     {
         const std::size_t size = count > zeros.size()
@@ -86,13 +77,11 @@ static bool writePadding(std::ostream& output, std::uint64_t count)
     }
     return true;
 }
-
 static bool normalizeArchivePath(std::string_view input, std::string& output)
 {
     std::string path(input);
     std::replace(path.begin(), path.end(), '\\', '/');
     output.clear();
-
     std::size_t begin = 0;
     while (begin <= path.size())
     {
@@ -100,12 +89,10 @@ static bool normalizeArchivePath(std::string_view input, std::string& output)
         const std::size_t length =
             (end == std::string::npos ? path.size() : end) - begin;
         const std::string_view part(path.data() + begin, length);
-
         if (!part.empty() && part != ".")
         {
             const bool drive = output.empty() && part.size() == 2 &&
                 std::isalpha(static_cast<unsigned char>(part[0])) && part[1] == ':';
-
             if (part == ".." && !output.empty())
             {
                 printf("ERROR: Unsafe parent traversal in archive path '%s'.\n",
@@ -119,12 +106,10 @@ static bool normalizeArchivePath(std::string_view input, std::string& output)
                 output += part;
             }
         }
-
         if (end == std::string::npos)
             break;
         begin = end + 1;
     }
-
     if (output.empty())
     {
         printf("ERROR: Archive path is empty.\n");
@@ -132,7 +117,6 @@ static bool normalizeArchivePath(std::string_view input, std::string& output)
     }
     return true;
 }
-
 bool readXaf(const std::filesystem::path& path, XafArchive& xaf)
 {
     std::error_code error;
@@ -149,14 +133,12 @@ bool readXaf(const std::filesystem::path& path, XafArchive& xaf)
         printf("ERROR: Invalid XAF header.\n");
         return false;
     }
-
     std::ifstream input(path, std::ios::binary);
     if (!input)
     {
         printf("ERROR: Could not open '%s'.\n", path.string().c_str());
         return false;
     }
-
     std::array<std::uint8_t, XAF_HEADER_SIZE> headerData{};
     input.read(reinterpret_cast<char*>(headerData.data()),
                static_cast<std::streamsize>(headerData.size()));
@@ -165,7 +147,6 @@ bool readXaf(const std::filesystem::path& path, XafArchive& xaf)
         printf("ERROR: Could not read '%s'.\n", path.string().c_str());
         return false;
     }
-
     xaf.header.magic = read32(headerData.data());
     xaf.header.flags = read32(headerData.data() + 4);
     std::memcpy(xaf.header.signature.data(), headerData.data() + 8, 28);
@@ -175,7 +156,6 @@ bool readXaf(const std::filesystem::path& path, XafArchive& xaf)
     xaf.header.archiveSize = read32(headerData.data() + 48);
     for (std::size_t i = 0; i < xaf.header.reserved.size(); ++i)
         xaf.header.reserved[i] = read32(headerData.data() + 52 + i * 4);
-
     if (xaf.header.magic != XAF_MAGIC)
     {
         printf("ERROR: Invalid XAF magic 0x%08" PRIx32 ".\n", xaf.header.magic);
@@ -192,7 +172,6 @@ bool readXaf(const std::filesystem::path& path, XafArchive& xaf)
         printf("ERROR: XAF archive size does not match the file size.\n");
         return false;
     }
-
     xaf.tableSize =
         XAF_HEADER_SIZE +
         static_cast<std::uint64_t>(xaf.header.entryCount) *
@@ -203,7 +182,6 @@ bool readXaf(const std::filesystem::path& path, XafArchive& xaf)
         printf("ERROR: XAF tables exceed the file size.\n");
         return false;
     }
-
     std::vector<std::uint8_t> tableData(
         static_cast<std::size_t>(xaf.tableSize - XAF_HEADER_SIZE));
     if (!tableData.empty())
@@ -216,7 +194,6 @@ bool readXaf(const std::filesystem::path& path, XafArchive& xaf)
         printf("ERROR: Could not read '%s'.\n", path.string().c_str());
         return false;
     }
-
     xaf.descs.resize(xaf.header.entryCount);
     xaf.entries.resize(xaf.header.entryCount);
     for (std::size_t i = 0; i < xaf.descs.size(); ++i)
@@ -226,7 +203,6 @@ bool readXaf(const std::filesystem::path& path, XafArchive& xaf)
         xaf.descs[i].offset = read32(data);
         xaf.descs[i].length = read32(data + 4);
     }
-
     const std::size_t entryTable =
         xaf.descs.size() * XAF_DESCRIPTION_SIZE;
     std::set<std::string> paths;
@@ -238,7 +214,6 @@ bool readXaf(const std::filesystem::path& path, XafArchive& xaf)
         entry.metaOffset = read32(data);
         entry.metaLength = read32(data + 4);
         std::memcpy(entry.rawPath.data(), data + 8, entry.rawPath.size());
-
         if (entry.rawPath[0] == 0 ||
             std::memchr(entry.rawPath.data(), 0, entry.rawPath.size()) == nullptr)
         {
@@ -256,13 +231,11 @@ bool readXaf(const std::filesystem::path& path, XafArchive& xaf)
             return false;
         }
     }
-
     xaf.payloadEnd = xaf.tableSize;
     for (std::size_t i = 0; i < xaf.descs.size(); ++i)
     {
         const std::uint64_t offset = xaf.descs[i].offset;
         const std::uint64_t end = offset + xaf.descs[i].length;
-
         if ((offset & (XAF_ALIGN - 1)) != 0)
         {
             printf("ERROR: Description %zu is not 0x%x-aligned.\n", i,
@@ -289,13 +262,11 @@ bool readXaf(const std::filesystem::path& path, XafArchive& xaf)
         }
         xaf.payloadEnd = std::max(xaf.payloadEnd, end);
     }
-
     std::uint64_t firstMetaOffset = std::numeric_limits<std::uint64_t>::max();
     for (std::size_t i = 0; i < xaf.entries.size(); ++i)
     {
         const std::uint64_t offset = xaf.entries[i].metaOffset;
         const std::uint64_t length = xaf.entries[i].metaLength;
-
         if (offset == 0 && length == 0)
             continue;
         if (offset == 0)
@@ -310,7 +281,6 @@ bool readXaf(const std::filesystem::path& path, XafArchive& xaf)
         }
         firstMetaOffset = std::min(firstMetaOffset, offset);
     }
-
     if (firstMetaOffset != std::numeric_limits<std::uint64_t>::max())
     {
         if ((firstMetaOffset & (XAF_ALIGN - 1)) != 0)
@@ -325,24 +295,20 @@ bool readXaf(const std::filesystem::path& path, XafArchive& xaf)
         }
         xaf.auxOffset = firstMetaOffset;
     }
-
     return true;
 }
-
 bool extractXaf(const std::filesystem::path& inputPath,
                 const std::filesystem::path& outputPath)
 {
     XafArchive xaf;
     if (!readXaf(inputPath, xaf))
         return false;
-
     std::ifstream input(inputPath, std::ios::binary);
     if (!input)
     {
         printf("ERROR: Could not open '%s'.\n", inputPath.string().c_str());
         return false;
     }
-
     const std::filesystem::path outputDirectory =
         outputPath / inputPath.stem();
     std::error_code error;
@@ -353,7 +319,6 @@ bool extractXaf(const std::filesystem::path& inputPath,
                outputDirectory.string().c_str(), error.message().c_str());
         return false;
     }
-
     for (std::size_t i = 0; i < xaf.entries.size(); ++i)
     {
         const std::filesystem::path path = outputDirectory / xaf.entries[i].path;
@@ -364,7 +329,6 @@ bool extractXaf(const std::filesystem::path& inputPath,
                    path.parent_path().string().c_str(), error.message().c_str());
             return false;
         }
-
         std::ofstream output(path, std::ios::binary);
         if (!output)
         {
@@ -375,12 +339,10 @@ bool extractXaf(const std::filesystem::path& inputPath,
                        xaf.descs[i].length))
             return false;
     }
-
     printf("Extracted %zu files from %s to %s.\n", xaf.entries.size(),
            inputPath.string().c_str(), outputDirectory.string().c_str());
     return true;
 }
-
 bool replaceXaf(const std::filesystem::path& archivePath,
                 std::string_view archiveEntry,
                 const std::filesystem::path& replacementPath,
@@ -389,11 +351,9 @@ bool replaceXaf(const std::filesystem::path& archivePath,
     XafArchive xaf;
     if (!readXaf(archivePath, xaf))
         return false;
-
     std::string entryPath;
     if (!normalizeArchivePath(archiveEntry, entryPath))
         return false;
-
     std::size_t targetIndex = xaf.entries.size();
     for (std::size_t i = 0; i < xaf.entries.size(); ++i)
     {
@@ -409,7 +369,6 @@ bool replaceXaf(const std::filesystem::path& archivePath,
                archivePath.string().c_str(), entryPath.c_str());
         return false;
     }
-
     std::error_code error;
     const std::uint64_t replacementSize =
         std::filesystem::file_size(replacementPath, error);
@@ -424,7 +383,6 @@ bool replaceXaf(const std::filesystem::path& archivePath,
         printf("ERROR: Replacement file is too large for an XAF entry.\n");
         return false;
     }
-
     std::vector<XafDescription> descs(xaf.descs.size());
     std::uint64_t cursor =
         xaf.descs.empty() ? xaf.tableSize : xaf.descs.front().offset;
@@ -437,14 +395,12 @@ bool replaceXaf(const std::filesystem::path& archivePath,
             printf("ERROR: Rewritten XAF description exceeds the offset range.\n");
             return false;
         }
-
         const std::uint64_t length =
             i == targetIndex ? replacementSize : xaf.descs[i].length;
         descs[i].offset = static_cast<std::uint32_t>(cursor);
         descs[i].length = static_cast<std::uint32_t>(length);
         cursor += descs[i].length;
     }
-
     const std::uint64_t auxSize =
         xaf.auxOffset == 0 ? 0 : xaf.fileSize - xaf.auxOffset;
     const std::uint64_t newAuxOffset =
@@ -456,7 +412,6 @@ bool replaceXaf(const std::filesystem::path& archivePath,
         printf("ERROR: Rewritten XAF exceeds the archive size field.\n");
         return false;
     }
-
     std::ifstream original(archivePath, std::ios::binary);
     std::ifstream replacement(replacementPath, std::ios::binary);
     std::ofstream output(outputPath, std::ios::binary);
@@ -475,7 +430,6 @@ bool replaceXaf(const std::filesystem::path& archivePath,
         printf("ERROR: Could not open '%s'.\n", outputPath.string().c_str());
         return false;
     }
-
     std::vector<std::uint8_t> tableData(
         static_cast<std::size_t>(xaf.tableSize));
     write32(tableData.data() + 0, xaf.header.magic);
@@ -488,7 +442,6 @@ bool replaceXaf(const std::filesystem::path& archivePath,
     write32(tableData.data() + 52, xaf.header.reserved[0]);
     write32(tableData.data() + 56, xaf.header.reserved[1]);
     write32(tableData.data() + 60, xaf.header.reserved[2]);
-
     for (std::size_t i = 0; i < descs.size(); ++i)
     {
         std::uint8_t* data =
@@ -496,7 +449,6 @@ bool replaceXaf(const std::filesystem::path& archivePath,
         write32(data, descs[i].offset);
         write32(data + 4, descs[i].length);
     }
-
     const std::size_t entryTable =
         XAF_HEADER_SIZE + descs.size() * XAF_DESCRIPTION_SIZE;
     for (std::size_t i = 0; i < xaf.entries.size(); ++i)
@@ -514,7 +466,6 @@ bool replaceXaf(const std::filesystem::path& archivePath,
         write32(data + 4, entry.metaLength);
         std::memcpy(data + 8, entry.rawPath.data(), entry.rawPath.size());
     }
-
     output.write(reinterpret_cast<const char*>(tableData.data()),
                  static_cast<std::streamsize>(tableData.size()));
     if (!output)
@@ -522,7 +473,6 @@ bool replaceXaf(const std::filesystem::path& archivePath,
         printf("ERROR: Could not write '%s'.\n", outputPath.string().c_str());
         return false;
     }
-
     std::uint64_t outputPosition = xaf.tableSize;
     if (!descs.empty())
     {
@@ -532,13 +482,11 @@ bool replaceXaf(const std::filesystem::path& archivePath,
             return false;
         outputPosition = descs.front().offset;
     }
-
     for (std::size_t i = 0; i < descs.size(); ++i)
     {
         if (!writePadding(output, descs[i].offset - outputPosition))
             return false;
         outputPosition = descs[i].offset;
-
         if (i == targetIndex)
         {
             if (!copyBytes(replacement, output, replacementSize))
@@ -555,7 +503,6 @@ bool replaceXaf(const std::filesystem::path& archivePath,
             outputPosition += xaf.descs[i].length;
         }
     }
-
     if (xaf.auxOffset != 0)
     {
         if (!writePadding(output, newAuxOffset - outputPosition) ||
@@ -565,21 +512,18 @@ bool replaceXaf(const std::filesystem::path& archivePath,
         }
         outputPosition = newAuxOffset + auxSize;
     }
-
     if (outputPosition != finalSize)
     {
         printf("ERROR: Wrote %" PRIu64 " bytes but expected %" PRIu64 ".\n",
                outputPosition, finalSize);
         return false;
     }
-
     output.flush();
     if (!output)
     {
         printf("ERROR: Could not write '%s'.\n", outputPath.string().c_str());
         return false;
     }
-
     printf("Replaced %s in %s -> %s.\n", entryPath.c_str(),
            archivePath.string().c_str(), outputPath.string().c_str());
     return true;
