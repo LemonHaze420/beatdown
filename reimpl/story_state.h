@@ -1,7 +1,7 @@
 #ifndef STORY_STATE_H
 #define STORY_STATE_H
 
-#include "game_data.h"
+#include "game/data.h"
 
 #include <stdint.h>
 

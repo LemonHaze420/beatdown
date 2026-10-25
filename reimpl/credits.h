@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#include "../formats/CREDITS/credits_data.h"
+#include "formats/CREDITS/credits_data.h"
 
 const uint32_t CREDITS_BASE_DURATION_FRAMES = 0x272b;
 const uint32_t CREDITS_INITIAL_WAIT_FRAMES = 0x50;

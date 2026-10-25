@@ -8,7 +8,7 @@
 #define WIN32_LEAN_AND_MEAN
 
 #include "movie.h"
-#include "audio.h"
+#include "audio/audio.h"
 
 #include <windows.h>
 #include <mfapi.h>

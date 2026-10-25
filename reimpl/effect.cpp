@@ -1,5 +1,5 @@
 #include "effect.h"
-#include "../formats/STAGE_EFFECT_RESOURCE/stage_effect_resource_table.h"
+#include "formats/STAGE_EFFECT_RESOURCE/stage_effect_resource_table.h"
 
 #include "xaf_runtime.h"
 

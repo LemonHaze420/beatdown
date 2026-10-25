@@ -1,6 +1,6 @@
 #include "story_state.h"
-#include "game_save.h"
-#include "../formats/STORY_FLOW/story_flow_tables.h"
+#include "game/save.h"
+#include "formats/STORY_FLOW/story_flow_tables.h"
 
 #include <math.h>
 #include <string.h>
