@@ -1,0 +1,54 @@
+name: Win32
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - formats/**
+      - libs/**
+      - reimpl/**
+      - .gitmodules
+      - .clang-format
+      - .github/workflows/win32.yml
+  pull_request:
+    paths:
+      - formats/**
+      - libs/**
+      - reimpl/**
+      - .gitmodules
+      - .clang-format
+      - .github/workflows/win32.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: win32-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          cache: false
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+      - name: Configure
+        run: cmake -S reimpl -B build/win32 -G Ninja -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build/win32 --target RWFightTribe --parallel 2

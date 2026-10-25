@@ -1,0 +1,13 @@
+Language: Cpp
+BasedOnStyle: LLVM
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 120
+BreakBeforeBraces: Allman
+AllowShortFunctionsOnASingleLine: None
+PointerAlignment: Left
+SortIncludes: Never
+ReflowComments: false
+BreakBeforeTernaryOperators: false
+FixNamespaceComments: false
