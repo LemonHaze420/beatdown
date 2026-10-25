@@ -1,4 +1,6 @@
 #include "game/data.h"
+#include "formats/common.h"
+#include "formats/RWS/rws.h"
 #include "character_records.h"
 
 #include "xaf_runtime.h"
@@ -13,8 +15,6 @@ namespace
 
 const size_t CHARACTER_RECORD_COUNT = 189;
 const size_t CHARACTER_RECORD_SIZE = 0x498;
-const uint32_t RW_CHUNK_IMAGE = 0x18;
-const uint32_t RW_CHUNK_CLUMP = 0x10;
 
 const uint16_t HOST_TEXT_IDS[] =
 {
@@ -42,20 +42,6 @@ const uint16_t HOST_TEXT_IDS[] =
 };
 const size_t HOST_TEXT_ID_COUNT =
     sizeof(HOST_TEXT_IDS) / sizeof(HOST_TEXT_IDS[0]);
-
-uint16_t read16(const uint8_t* data)
-{
-    uint16_t value;
-    memcpy(&value, data, sizeof(value));
-    return value;
-}
-
-uint32_t read32(const uint8_t* data)
-{
-    uint32_t value;
-    memcpy(&value, data, sizeof(value));
-    return value;
-}
 
 void makeArchivePath(char* path, size_t size, const char* directory,
                      const char* fileName)

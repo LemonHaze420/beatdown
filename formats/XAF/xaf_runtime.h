@@ -1,5 +1,6 @@
 #ifndef XAF_RUNTIME_H
 #define XAF_RUNTIME_H
+#include "xaf_format.h"
 #include <stdint.h>
 #include <string>
 #include <vector>

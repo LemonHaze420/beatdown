@@ -1,4 +1,5 @@
 #include "scene/props.h"
+#include "formats/common.h"
 #include "scene/runtime.h"
 
 #include <rw.h>
@@ -11,14 +12,6 @@ namespace
 {
 
 const uint32_t CHUNK_NAME = 0x79032101;
-
-uint32_t read32(const uint8_t* data)
-{
-    return static_cast<uint32_t>(data[0]) |
-           (static_cast<uint32_t>(data[1]) << 8) |
-           (static_cast<uint32_t>(data[2]) << 16) |
-           (static_cast<uint32_t>(data[3]) << 24);
-}
 
 rw::Clump* readClump(const uint8_t* chunk, uint32_t length)
 {

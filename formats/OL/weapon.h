@@ -1,5 +1,6 @@
 #ifndef WEAPON_H
 #define WEAPON_H
+#include "../RWS/rws.h"
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -13,14 +14,7 @@ enum WeaponObjectType : uint32_t
 };
 const int WEAPON_MANAGER_CAPACITY = 0x30;
 const int WEAPON_INVALID_MANAGER_ID = -1;
-struct WeaponAssetChunk
-{
-    uint32_t id;
-    uint32_t dataSize;
-    uint32_t libraryId;
-    size_t offset;
-    size_t end;
-};
+using WeaponAssetChunk = RwChunkSpan;
 struct WeaponObjectRecord
 {
     uint32_t objectType;

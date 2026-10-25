@@ -1,4 +1,6 @@
 #include "rwworld.h"
+#include "formats/common.h"
+#include "formats/RWS/rws.h"
 
 #include <rw.h>
 
@@ -9,120 +11,63 @@
 namespace
 {
 
-const uint32_t ID_ATOMICSECT = 0x09;
-const uint32_t ID_PLANESECT = 0x0a;
-
-const uint32_t CHUNK_HEADER_SIZE = 12;
-const uint32_t WORLD_STRUCT_PREFIX = 40;
-const uint32_t PLANE_SECTOR_STRUCT_SIZE = 24;
-const uint32_t ATOMIC_SECTOR_STRUCT_PREFIX = 44;
-
-uint32_t read32(const uint8_t* data)
-{
-    uint32_t value;
-    memcpy(&value, data, sizeof(value));
-    return value;
-}
-
-uint16_t read16(const uint8_t* data)
-{
-    uint16_t value;
-    memcpy(&value, data, sizeof(value));
-    return value;
-}
-
-float readFloat(const uint8_t* data)
-{
-    float value;
-    memcpy(&value, data, sizeof(value));
-    return value;
-}
-
-struct ChunkHeader
-{
-    uint32_t type;
-    uint32_t length;
-    uint32_t version;
-};
-
-bool readChunkHeader(const uint8_t* data, uint32_t length, uint32_t offset,
-                     ChunkHeader& header)
-{
-    if(static_cast<uint64_t>(offset) + CHUNK_HEADER_SIZE > length)
-        return false;
-    header.type = read32(data + offset);
-    header.length = read32(data + offset + 4);
-    header.version = read32(data + offset + 8);
-    return static_cast<uint64_t>(offset) + CHUNK_HEADER_SIZE + header.length <=
-           length;
-}
-
 bool readMaterialTextureAlphaMask(const uint8_t* data, uint32_t length,
                                   uint32_t materialOffset,
                                   uint32_t materialLength,
                                   bool& hasAlphaMask)
 {
     hasAlphaMask = false;
-    const uint64_t materialEnd64 =
-        static_cast<uint64_t>(materialOffset) + CHUNK_HEADER_SIZE +
-        materialLength;
+    const uint64_t materialEnd64 = static_cast<uint64_t>(materialOffset) + RW_CHUNK_HEADER_SIZE + materialLength;
     if(materialEnd64 > length)
         return false;
     const uint32_t materialEnd = static_cast<uint32_t>(materialEnd64);
 
     bool haveStruct = false;
     bool textured = false;
-    uint32_t cursor = materialOffset + CHUNK_HEADER_SIZE;
+    uint32_t cursor = materialOffset + RW_CHUNK_HEADER_SIZE;
     while(cursor < materialEnd)
     {
-        ChunkHeader child;
-        if(!readChunkHeader(data, length, cursor, child) ||
-           static_cast<uint64_t>(cursor) + CHUNK_HEADER_SIZE + child.length >
-               materialEnd)
+        RwChunkSpan child;
+        if (!readRwChunk(data, length, cursor, child) ||
+            static_cast<uint64_t>(cursor) + RW_CHUNK_HEADER_SIZE + child.dataSize > materialEnd)
             return false;
 
-        if(child.type == rw::ID_STRUCT && !haveStruct)
+        if (child.id == rw::ID_STRUCT && !haveStruct)
         {
 
-            if(child.length < 0x10)
+            if (child.dataSize < 0x10)
                 return false;
-            textured = read32(data + cursor + CHUNK_HEADER_SIZE + 0x0c) != 0;
+            textured = read32(data + cursor + RW_CHUNK_HEADER_SIZE + 0x0c) != 0;
             haveStruct = true;
         }
-        else if(child.type == rw::ID_TEXTURE)
+        else if (child.id == rw::ID_TEXTURE)
         {
             if(!haveStruct || !textured)
                 return false;
-            const uint32_t textureEnd =
-                cursor + CHUNK_HEADER_SIZE + child.length;
-            uint32_t textureCursor = cursor + CHUNK_HEADER_SIZE;
+            const uint32_t textureEnd = cursor + RW_CHUNK_HEADER_SIZE + child.dataSize;
+            uint32_t textureCursor = cursor + RW_CHUNK_HEADER_SIZE;
             int stringIndex = 0;
             while(textureCursor < textureEnd)
             {
-                ChunkHeader textureChild;
-                if(!readChunkHeader(data, length, textureCursor,
-                                    textureChild) ||
-                   static_cast<uint64_t>(textureCursor) + CHUNK_HEADER_SIZE +
-                           textureChild.length >
-                       textureEnd)
+                RwChunkSpan textureChild;
+                if (!readRwChunk(data, length, textureCursor, textureChild) ||
+                    static_cast<uint64_t>(textureCursor) + RW_CHUNK_HEADER_SIZE + textureChild.dataSize > textureEnd)
                     return false;
-                if(textureChild.type == rw::ID_STRING)
+                if (textureChild.id == rw::ID_STRING)
                 {
 
                     if(stringIndex == 1)
                     {
-                        hasAlphaMask =
-                            textureChild.length != 0 &&
-                            data[textureCursor + CHUNK_HEADER_SIZE] != 0;
+                        hasAlphaMask = textureChild.dataSize != 0 && data[textureCursor + RW_CHUNK_HEADER_SIZE] != 0;
                         return true;
                     }
                     ++stringIndex;
                 }
-                textureCursor += CHUNK_HEADER_SIZE + textureChild.length;
+                textureCursor += RW_CHUNK_HEADER_SIZE + textureChild.dataSize;
             }
             return false;
         }
-        cursor += CHUNK_HEADER_SIZE + child.length;
+        cursor += RW_CHUNK_HEADER_SIZE + child.dataSize;
     }
     return haveStruct && !textured;
 }
@@ -139,24 +84,18 @@ bool readMaterialAlphaMasks(const uint8_t* data, uint32_t length,
     const uint32_t materialListEnd =
         static_cast<uint32_t>(materialListEnd64);
 
-    ChunkHeader body;
-    if(!readChunkHeader(data, length, materialListOffset, body) ||
-       body.type != rw::ID_STRUCT ||
-       static_cast<uint64_t>(materialListOffset) + CHUNK_HEADER_SIZE +
-               body.length >
-           materialListEnd ||
-       body.length < 4)
+    RwChunkSpan body;
+    if (!readRwChunk(data, length, materialListOffset, body) || body.id != rw::ID_STRUCT ||
+        static_cast<uint64_t>(materialListOffset) + RW_CHUNK_HEADER_SIZE + body.dataSize > materialListEnd ||
+        body.dataSize < 4)
         return false;
-    const uint8_t* record =
-        data + materialListOffset + CHUNK_HEADER_SIZE;
+    const uint8_t* record = data + materialListOffset + RW_CHUNK_HEADER_SIZE;
     const int32_t materialCount = static_cast<int32_t>(read32(record));
-    if(materialCount < 0 ||
-       4u + static_cast<uint64_t>(materialCount) * 4u > body.length)
+    if (materialCount < 0 || 4u + static_cast<uint64_t>(materialCount) * 4u > body.dataSize)
         return false;
 
     alphaMasks.assign(static_cast<size_t>(materialCount), 0);
-    uint32_t cursor =
-        materialListOffset + CHUNK_HEADER_SIZE + body.length;
+    uint32_t cursor = materialListOffset + RW_CHUNK_HEADER_SIZE + body.dataSize;
     for(int32_t i = 0; i < materialCount; ++i)
     {
         const int32_t previous =
@@ -169,19 +108,15 @@ bool readMaterialAlphaMasks(const uint8_t* data, uint32_t length,
             continue;
         }
 
-        ChunkHeader material;
-        if(!readChunkHeader(data, length, cursor, material) ||
-           material.type != rw::ID_MATERIAL ||
-           static_cast<uint64_t>(cursor) + CHUNK_HEADER_SIZE +
-                   material.length >
-               materialListEnd)
+        RwChunkSpan material;
+        if (!readRwChunk(data, length, cursor, material) || material.id != rw::ID_MATERIAL ||
+            static_cast<uint64_t>(cursor) + RW_CHUNK_HEADER_SIZE + material.dataSize > materialListEnd)
             return false;
         bool hasAlphaMask = false;
-        if(!readMaterialTextureAlphaMask(data, length, cursor,
-                                         material.length, hasAlphaMask))
+        if (!readMaterialTextureAlphaMask(data, length, cursor, material.dataSize, hasAlphaMask))
             return false;
         alphaMasks[i] = hasAlphaMask ? 1 : 0;
-        cursor += CHUNK_HEADER_SIZE + material.length;
+        cursor += RW_CHUNK_HEADER_SIZE + material.dataSize;
     }
     return true;
 }
@@ -255,18 +190,17 @@ uint32_t sectorVertexStride(uint32_t format)
 
 bool readAtomicSector(WorldReader& reader, uint32_t offset)
 {
-    ChunkHeader header;
-    if(!readChunkHeader(reader.data, reader.length, offset, header) ||
-       header.type != ID_ATOMICSECT)
+    RwChunkSpan header;
+    if (!readRwChunk(reader.data, reader.length, offset, header) || header.id != RW_CHUNK_ATOMIC_SECTOR)
         return false;
 
-    ChunkHeader body;
-    const uint32_t structOffset = offset + CHUNK_HEADER_SIZE;
-    if(!readChunkHeader(reader.data, reader.length, structOffset, body) ||
-       body.type != 0x01 || body.length < ATOMIC_SECTOR_STRUCT_PREFIX)
+    RwChunkSpan body;
+    const uint32_t structOffset = offset + RW_CHUNK_HEADER_SIZE;
+    if (!readRwChunk(reader.data, reader.length, structOffset, body) || body.id != 0x01 ||
+        body.dataSize < RW_ATOMIC_SECTOR_STRUCT_PREFIX)
         return false;
 
-    const uint8_t* record = reader.data + structOffset + CHUNK_HEADER_SIZE;
+    const uint8_t* record = reader.data + structOffset + RW_CHUNK_HEADER_SIZE;
     const int32_t matListWindowBase = static_cast<int32_t>(read32(record));
     const int32_t numTriangles = static_cast<int32_t>(read32(record + 4));
     const int32_t numVertices = static_cast<int32_t>(read32(record + 8));
@@ -275,11 +209,10 @@ bool readAtomicSector(WorldReader& reader, uint32_t offset)
     if(numTriangles == 0 || numVertices == 0)
         return true;
 
-    const uint64_t needed =
-        static_cast<uint64_t>(ATOMIC_SECTOR_STRUCT_PREFIX) +
-        static_cast<uint64_t>(numVertices) * reader.vertexStride +
-        static_cast<uint64_t>(numTriangles) * 8;
-    if(needed != body.length)
+    const uint64_t needed = static_cast<uint64_t>(RW_ATOMIC_SECTOR_STRUCT_PREFIX) +
+                            static_cast<uint64_t>(numVertices) * reader.vertexStride +
+                            static_cast<uint64_t>(numTriangles) * 8;
+    if (needed != body.dataSize)
         return false;
 
     rw::Geometry* geometry =
@@ -294,7 +227,7 @@ bool readAtomicSector(WorldReader& reader, uint32_t offset)
         reader.geometry->vertices.size());
     reader.geometry->vertices.reserve(vertexBase + numVertices);
 
-    const uint8_t* cursor = record + ATOMIC_SECTOR_STRUCT_PREFIX;
+    const uint8_t* cursor = record + RW_ATOMIC_SECTOR_STRUCT_PREFIX;
     rw::V3d* positions = geometry->morphTargets[0].vertices;
     for(int32_t i = 0; i < numVertices; ++i)
     {
@@ -429,32 +362,32 @@ bool triangleColumnHeight(const RwWorldGeometry& geometry,
 
 bool readSector(WorldReader& reader, uint32_t offset)
 {
-    ChunkHeader header;
-    if(!readChunkHeader(reader.data, reader.length, offset, header))
+    RwChunkSpan header;
+    if (!readRwChunk(reader.data, reader.length, offset, header))
         return false;
-    if(header.type == ID_ATOMICSECT)
+    if (header.id == RW_CHUNK_ATOMIC_SECTOR)
         return readAtomicSector(reader, offset);
-    if(header.type != ID_PLANESECT)
+    if (header.id != RW_CHUNK_PLANE_SECTOR)
         return false;
 
-    ChunkHeader body;
-    const uint32_t structOffset = offset + CHUNK_HEADER_SIZE;
-    if(!readChunkHeader(reader.data, reader.length, structOffset, body) ||
-       body.type != 0x01 || body.length < PLANE_SECTOR_STRUCT_SIZE)
+    RwChunkSpan body;
+    const uint32_t structOffset = offset + RW_CHUNK_HEADER_SIZE;
+    if (!readRwChunk(reader.data, reader.length, structOffset, body) || body.id != 0x01 ||
+        body.dataSize < RW_PLANE_SECTOR_STRUCT_SIZE)
         return false;
 
-    uint32_t child = structOffset + CHUNK_HEADER_SIZE + body.length;
-    const uint32_t end = offset + CHUNK_HEADER_SIZE + header.length;
+    uint32_t child = structOffset + RW_CHUNK_HEADER_SIZE + body.dataSize;
+    const uint32_t end = offset + RW_CHUNK_HEADER_SIZE + header.dataSize;
     for(int side = 0; side < 2; ++side)
     {
         if(child >= end)
             return false;
-        ChunkHeader childHeader;
-        if(!readChunkHeader(reader.data, reader.length, child, childHeader))
+        RwChunkSpan childHeader;
+        if (!readRwChunk(reader.data, reader.length, child, childHeader))
             return false;
         if(!readSector(reader, child))
             return false;
-        child += CHUNK_HEADER_SIZE + childHeader.length;
+        child += RW_CHUNK_HEADER_SIZE + childHeader.dataSize;
     }
     return true;
 }
@@ -709,8 +642,7 @@ readRwWorldClump(const uint8_t* data, uint32_t length,
         return NULL;
 
     uint32_t structLength = 0;
-    if(!rw::findChunk(&stream, rw::ID_STRUCT, &structLength, NULL) ||
-       structLength < WORLD_STRUCT_PREFIX)
+    if (!rw::findChunk(&stream, rw::ID_STRUCT, &structLength, NULL) || structLength < RW_WORLD_STRUCT_PREFIX)
         return NULL;
 
     const uint32_t structOffset = stream.tell();

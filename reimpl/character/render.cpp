@@ -181,7 +181,7 @@ characterMorphGeometryData(const rw::Geometry* geometry)
 
 rw::Image* decodeCharacterImageChunk(const uint8_t* chunk, uint32_t chunkLength)
 {
-    if(chunkLength < 28 || read32(chunk) != CHUNK_STRUCT || read32(chunk + 4) != 16)
+    if (chunkLength < 28 || read32(chunk) != RW_CHUNK_STRUCT || read32(chunk + 4) != 16)
         return NULL;
 
     const uint32_t width = read32(chunk + 12);

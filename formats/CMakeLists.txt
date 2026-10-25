@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.8)
 
 add_library(Formats STATIC
+    RWS/rws.cpp
+    EST/est.cpp
+    STAGE_EFFECT_RESOURCE/stage_effect_resource.cpp
     PAL_E_BIN/palmode.cpp
     CHARACTER_DB/character_records.cpp
     CHARACTER_DB/combat_styles.cpp
@@ -40,6 +43,7 @@ add_library(Formats STATIC
     OL/weapon.cpp)
 
 target_include_directories(Formats PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}"
     "${CMAKE_CURRENT_SOURCE_DIR}/PAL_E_BIN"
     "${CMAKE_CURRENT_SOURCE_DIR}/CHARACTER_DB"
     "${CMAKE_CURRENT_SOURCE_DIR}/VERSUS"

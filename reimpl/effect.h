@@ -3,9 +3,10 @@
 
 #include <stddef.h>
 #include <stdint.h>
-
-#include <string>
 #include <vector>
+
+#include "formats/EST/est.h"
+#include "formats/STAGE_EFFECT_RESOURCE/stage_effect_resource.h"
 
 namespace rw
 {
@@ -15,16 +16,6 @@ struct Frame;
 struct TexDictionary;
 struct World;
 }
-
-enum class EffectRecordType : int32_t
-{
-    Absent = -1,
-    Atomic = 0,
-    Clump = 1,
-    Custom = 2,
-    TextureFallback = 4,
-    Unknown = 0x7fffffff
-};
 
 struct EffectVector3
 {
@@ -45,64 +36,6 @@ EffectMatrix effectIdentityMatrix(void);
 EffectMatrix effectYRotationMatrix(float degrees,
                                    const EffectVector3& position);
 bool effectMatrixIsFinite(const EffectMatrix& matrix);
-
-struct EffectObjectChunk
-{
-    uint32_t id;
-    uint32_t libraryId;
-    std::vector<uint8_t> bytes;
-};
-
-struct EffectRecord
-{
-    EffectRecordType type;
-    EffectRecordType sourceType;
-    uint32_t flags;
-    int32_t payloadReference;
-    float defaultScale;
-
-    float initialLifetimeSeconds;
-    std::string textureName;
-    int32_t payloadObject;
-    bool active;
-    bool fallback;
-};
-
-struct EffectAsset
-{
-    std::vector<uint8_t> stream;
-    std::vector<EffectRecord> records;
-    std::vector<EffectObjectChunk> objects;
-    size_t textureChunkOffset;
-    size_t directoryChunkOffset;
-    size_t unknownActiveRecords;
-
-    EffectAsset();
-    void clear();
-};
-
-struct StageEffectResource
-{
-    uint32_t stageId;
-    uint32_t resourceId;
-    uint32_t archiveEntryIndex;
-    uint32_t animationStreamCount;
-    std::string archiveEntryName;
-    std::vector<uint8_t> packedBundle;
-
-    StageEffectResource();
-    void clear();
-};
-
-bool resolveStageEffectResourceId(uint32_t resourceId,
-                                  uint32_t* archiveEntryIndex);
-
-bool loadStageEffectResource(const char* stageArchivePath, uint32_t stageId,
-                             StageEffectResource* resource);
-
-bool parseEstEffectStream(const uint8_t* data, size_t length,
-                          EffectAsset* asset);
-bool parseEstEffectFile(const char* path, EffectAsset* asset);
 
 static const uint32_t EFFECT_INVALID_HANDLE = 0xffffffffu;
 static const uint8_t EFFECT_RECORD_SENTINEL = 0xffu;
@@ -143,13 +76,98 @@ struct EffectEmitterState
     EffectMatrix world;
 };
 
+namespace effect_detail
+{
+
+struct EffectRenderObject
+{
+    rw::Atomic* atomic;
+    rw::Clump* clump;
+
+    rw::Frame* sourceFrame;
+    rw::Frame* objectFrame;
+
+    EffectRenderObject() : atomic(NULL), clump(NULL), sourceFrame(NULL), objectFrame(NULL)
+    {
+    }
+};
+
+struct EffectInstance
+{
+    bool active;
+    bool controllerComplete;
+    uint32_t handle;
+    uint8_t recordIndex;
+    float ageSeconds;
+    float lifetimeSeconds;
+    int16_t tuningA;
+    int16_t tuningB;
+    EffectMatrix world;
+    EffectRenderObject renderObject;
+
+    EffectInstance()
+        : active(false), controllerComplete(false), handle(EFFECT_INVALID_HANDLE), recordIndex(EFFECT_RECORD_SENTINEL),
+          ageSeconds(0.0f), lifetimeSeconds(0.8f), tuningA(0), tuningB(0), world(effectIdentityMatrix()), renderObject()
+    {
+    }
+};
+
+struct EffectEmitter
+{
+    bool active;
+    uint32_t handle;
+    uint8_t recordIndex;
+    uint8_t mode;
+    float ageSeconds;
+    float timerSeconds;
+    float intervalSeconds;
+    float lifetimeSeconds;
+    EffectMatrixProvider* provider;
+    void* userData;
+    EffectMatrix world;
+
+    EffectEmitter()
+        : active(false), handle(EFFECT_INVALID_HANDLE), recordIndex(EFFECT_RECORD_SENTINEL), mode(0), ageSeconds(0.0f),
+          timerSeconds(0.0f), intervalSeconds(0.0f), lifetimeSeconds(0.0f), provider(NULL), userData(NULL),
+          world(effectIdentityMatrix())
+    {
+    }
+};
+
+struct EffectManagerState
+{
+    rw::World* world;
+    rw::TexDictionary* textureDictionary;
+    bool initialized;
+    bool loaded;
+    bool paused;
+    float timeScale;
+    uint32_t nextHandle;
+    uint32_t randomState;
+    size_t invalidDispatches;
+    size_t emitterCursor;
+    EffectAsset asset;
+    StageEffectResource stageResource;
+    std::vector<EffectInstance> pool;
+    EffectEmitter emitters[EFFECT_EMITTER_CAPACITY];
+
+    EffectManagerState()
+        : world(NULL), textureDictionary(NULL), initialized(false), loaded(false), paused(false), timeScale(1.0f),
+          nextHandle(1), randomState(0x13579bdfu), invalidDispatches(0), emitterCursor(0), asset(), stageResource(),
+          pool(EFFECT_ACTIVE_CAPACITY)
+    {
+    }
+};
+
+}
+
 class EffectManager
 {
-public:
-    struct Impl;
-
+  public:
     EffectManager();
     ~EffectManager();
+    EffectManager(const EffectManager&) = delete;
+    EffectManager& operator=(const EffectManager&) = delete;
 
     bool initialize(rw::World* world = NULL);
     bool load(const char* archivePath, const char* entryName = "EFF001.EST");
@@ -187,11 +205,9 @@ public:
     size_t poolCapacity() const;
     bool getInstance(uint32_t handle, EffectInstanceState* state) const;
     bool getEmitter(uint32_t handle, EffectEmitterState* state) const;
-    Impl* implementation();
-    const Impl* implementation() const;
 
-private:
-    Impl* impl_;
+  private:
+    effect_detail::EffectManagerState state_;
 };
 
 #endif

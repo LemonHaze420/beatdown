@@ -1,4 +1,5 @@
 #include "stage/stage.h"
+#include "formats/common.h"
 #include "stage/weapon_internal.h"
 #include "stage/weapon_grants.h"
 #include "game/bits.h"
@@ -19,27 +20,6 @@ struct SectionSpan
     uint32_t offset;
     uint32_t length;
 };
-
-uint16_t read16(const uint8_t* data)
-{
-    uint16_t value;
-    memcpy(&value, data, sizeof(value));
-    return value;
-}
-
-uint32_t read32(const uint8_t* data)
-{
-    uint32_t value;
-    memcpy(&value, data, sizeof(value));
-    return value;
-}
-
-float readFloat(const uint8_t* data)
-{
-    float value;
-    memcpy(&value, data, sizeof(value));
-    return value;
-}
 
 using game_detail::floatFromBits;
 

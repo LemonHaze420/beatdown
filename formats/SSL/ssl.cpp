@@ -1,34 +1,9 @@
 #include "ssl.h"
+#include "../common.h"
 #include "../XAF/xaf_runtime.h"
 #include <string.h>
 namespace
 {
-uint32_t read32(const uint8_t* data)
-{
-    return (uint32_t)data[0] | ((uint32_t)data[1] << 8) |
-        ((uint32_t)data[2] << 16) | ((uint32_t)data[3] << 24);
-}
-uint16_t read16(const uint8_t* data)
-{
-    return (uint16_t)((uint16_t)data[0] | ((uint16_t)data[1] << 8));
-}
-
-const char SSL_CHUNK_MIDI[8] = { 'I', 'E', 'C', 'S', 'i', 'd', 'i', 'M' };
-const char SSL_CHUNK_PROG[8] = { 'I', 'E', 'C', 'S', 'g', 'o', 'r', 'P' };
-const char SSL_CHUNK_SSET[8] = { 'I', 'E', 'C', 'S', 't', 'e', 's', 'S' };
-const char SSL_CHUNK_SMPL[8] = { 'I', 'E', 'C', 'S', 'l', 'p', 'm', 'S' };
-const char SSL_CHUNK_VAGI[8] = { 'I', 'E', 'C', 'S', 'i', 'g', 'a', 'V' };
-const uint32_t SSL_HEADER_BYTES = 0x20;
-const uint32_t SSL_CHUNK_HEADER_BYTES = 0x0c;
-
-const int32_t PS_ADPCM_FILTER_A[5] = { 0, 60, 115, 98, 122 };
-const int32_t PS_ADPCM_FILTER_B[5] = { 0, 0, -52, -55, -60 };
-struct SslDirectoryView
-{
-    const uint8_t* data;
-    uint32_t size;
-    uint32_t count;
-};
 bool findChunk(const uint8_t* data, uint32_t start, uint32_t end,
                const char id[8], SslDirectoryView& view)
 {

@@ -47,8 +47,7 @@ bool convertCompressedAnimation(std::vector<uint8_t>& data)
     const uint32_t COMPRESSED_FRAME_SIZE = 22;
     const uint32_t HANIM_FRAME_SIZE = 36;
     const uint32_t CUSTOM_DATA_SIZE = 24;
-    if(data.size() < 32 || read32(data.data()) != CHUNK_ANIMATION ||
-       read32(data.data() + 12) != 0x100)
+    if (data.size() < 32 || read32(data.data()) != RW_CHUNK_ANIMATION || read32(data.data() + 12) != 0x100)
         return false;
 
     const uint32_t type = read32(data.data() + 16);
@@ -920,7 +919,7 @@ loadStxTexture(const char* archivePath, const char* entryName)
 
     const uint8_t* imageChunk = data.data();
     uint32_t imageLength = static_cast<uint32_t>(data.size());
-    if(data.size() >= 12 && read32(data.data()) == CHUNK_IMAGE)
+    if (data.size() >= 12 && read32(data.data()) == RW_CHUNK_IMAGE)
     {
         const uint32_t rootLength = read32(data.data() + 4);
         if(static_cast<uint64_t>(rootLength) + 12 != data.size())
@@ -951,7 +950,7 @@ loadStxTextureByIndex(const char* archivePath, const XafEntryInfo& entry)
         return NULL;
     const uint8_t* imageChunk = data.data();
     uint32_t imageLength = static_cast<uint32_t>(data.size());
-    if(data.size() >= 12 && read32(data.data()) == CHUNK_IMAGE)
+    if (data.size() >= 12 && read32(data.data()) == RW_CHUNK_IMAGE)
     {
         const uint32_t rootLength = read32(data.data() + 4);
         if(static_cast<uint64_t>(rootLength) + 12 != data.size())
@@ -1335,7 +1334,7 @@ decodeCharacterArchiveGroup(
             valid = false;
             break;
         }
-        if(type == CHUNK_CLUMP)
+        if (type == RW_CHUNK_CLUMP)
         {
             rw::StreamMemory stream;
             stream.open(resource.data() + offset,
@@ -1728,7 +1727,7 @@ loadCharacterScene(const char* archivePath, uint16_t resourceId,
         const uint32_t length = read32(header + 4);
         if(static_cast<uint64_t>(offset) + 12 + length > scene->data.size())
             break;
-        if(type == CHUNK_IMAGE)
+        if (type == RW_CHUNK_IMAGE)
         {
             rw::Raster* raster = readImageRaster(header + 12, length);
             if(raster == NULL)
@@ -1790,7 +1789,7 @@ loadCharacterScene(const char* archivePath, uint16_t resourceId,
             break;
         }
 
-        if(type == CHUNK_CLUMP)
+        if (type == RW_CHUNK_CLUMP)
         {
             rw::StreamMemory stream;
             stream.open(scene->data.data() + offset,
@@ -1809,7 +1808,7 @@ loadCharacterScene(const char* archivePath, uint16_t resourceId,
             prepareCharacterRenderClump(clump);
             scene->clumps.push_back(clump);
         }
-        else if(type != CHUNK_IMAGE && type != CHUNK_ANIMATION)
+        else if (type != RW_CHUNK_IMAGE && type != RW_CHUNK_ANIMATION)
         {
 
         }

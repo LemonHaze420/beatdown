@@ -1,11 +1,11 @@
 #include "effect.h"
-#include "formats/STAGE_EFFECT_RESOURCE/stage_effect_resource_table.h"
+#include "formats/common.h"
+#include "formats/RWS/rws.h"
 
 #include "xaf_runtime.h"
 
 #include <rw.h>
 
-#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -15,178 +15,12 @@
 namespace
 {
 
-const uint32_t CHUNK_TEXDICTIONARY = 0x16;
-const uint32_t CHUNK_ATOMIC = 0x14;
-const uint32_t CHUNK_CLUMP = 0x10;
-const uint32_t CHUNK_EST_DIRECTORY = 0x79032003;
-const uint32_t CHUNK_EST_CUSTOM = 0x78032010;
-const uint32_t CHUNK_EST_CUSTOM_PAYLOAD = 0x78032020;
-const uint32_t CHUNK_EST_CUSTOM_ANIMATIONS = 0x78032030;
-const uint32_t CHUNK_ANIMATION = 0x1b;
-const uint32_t EFFECT_FLAGS_ATOMIC_BRANCH = 0x04000000;
-const uint32_t MAX_PACKED_BUNDLE_ENTRIES = 0x10000;
-
-struct ChunkSpan
-{
-    size_t offset;
-    size_t end;
-    uint32_t id;
-    uint32_t size;
-    uint32_t libraryId;
-};
-
-uint32_t read32(const uint8_t* data)
-{
-    uint32_t value;
-    memcpy(&value, data, sizeof(value));
-    return value;
-}
-
-void write32(uint8_t* data, uint32_t value)
-{
-    memcpy(data, &value, sizeof(value));
-}
-
-int32_t readI32(const uint8_t* data)
-{
-    int32_t value;
-    memcpy(&value, data, sizeof(value));
-    return value;
-}
-
-float readFloat(const uint8_t* data)
-{
-    float value;
-    memcpy(&value, data, sizeof(value));
-    return value;
-}
-
-bool readChunk(const uint8_t* data, size_t length, size_t offset,
-              ChunkSpan* chunk)
-{
-    if(chunk == NULL || offset > length || length - offset < 12)
-        return false;
-    const uint32_t size = read32(data + offset + 4);
-    if(static_cast<uint64_t>(offset) + 12 + size > length)
-        return false;
-    chunk->offset = offset;
-    chunk->end = offset + 12 + size;
-    chunk->id = read32(data + offset);
-    chunk->size = size;
-    chunk->libraryId = read32(data + offset + 8);
-    return true;
-}
-
-EffectRecordType recordType(uint32_t rawType)
-{
-    switch(rawType)
-    {
-    case 0:
-        return EffectRecordType::Atomic;
-    case 1:
-        return EffectRecordType::Clump;
-    case 2:
-        return EffectRecordType::Custom;
-    case 0xffffffffu:
-        return EffectRecordType::Absent;
-    default:
-        return EffectRecordType::Unknown;
-    }
-}
-
-uint32_t expectedChunkId(EffectRecordType type)
-{
-    switch(type)
-    {
-    case EffectRecordType::Atomic:
-        return CHUNK_ATOMIC;
-    case EffectRecordType::Clump:
-        return CHUNK_CLUMP;
-    case EffectRecordType::Custom:
-        return CHUNK_EST_CUSTOM;
-    default:
-        return 0;
-    }
-}
-
-bool hasName(const uint8_t* name)
-{
-    return name != NULL && name[0] != 0;
-}
-
-std::string readName(const uint8_t* name)
-{
-    if(!hasName(name))
-        return std::string();
-    size_t length = 0;
-    while(length < 12 && name[length] != 0)
-        length++;
-    return std::string(reinterpret_cast<const char*>(name), length);
-}
+using namespace effect_detail;
 
 bool isFinite(float value)
 {
     return std::isfinite(value) != 0;
 }
-
-struct EffectRenderObject
-{
-    rw::Atomic* atomic;
-    rw::Clump* clump;
-
-    rw::Frame* sourceFrame;
-    rw::Frame* objectFrame;
-
-    EffectRenderObject()
-        : atomic(NULL), clump(NULL), sourceFrame(NULL), objectFrame(NULL)
-    {
-    }
-};
-
-struct EffectInstance
-{
-    bool active;
-    bool controllerComplete;
-    uint32_t handle;
-    uint8_t recordIndex;
-    float ageSeconds;
-    float lifetimeSeconds;
-    int16_t tuningA;
-    int16_t tuningB;
-    EffectMatrix world;
-    EffectRenderObject renderObject;
-
-    EffectInstance()
-        : active(false), controllerComplete(false),
-          handle(EFFECT_INVALID_HANDLE), recordIndex(EFFECT_RECORD_SENTINEL),
-          ageSeconds(0.0f), lifetimeSeconds(0.8f), tuningA(0), tuningB(0),
-          world(effectIdentityMatrix()), renderObject()
-    {
-    }
-};
-
-struct EffectEmitter
-{
-    bool active;
-    uint32_t handle;
-    uint8_t recordIndex;
-    uint8_t mode;
-    float ageSeconds;
-    float timerSeconds;
-    float intervalSeconds;
-    float lifetimeSeconds;
-    EffectMatrixProvider* provider;
-    void* userData;
-    EffectMatrix world;
-
-    EffectEmitter()
-        : active(false), handle(EFFECT_INVALID_HANDLE),
-          recordIndex(EFFECT_RECORD_SENTINEL), mode(0), ageSeconds(0.0f),
-          timerSeconds(0.0f), intervalSeconds(0.0f), lifetimeSeconds(0.0f),
-          provider(NULL), userData(NULL), world(effectIdentityMatrix())
-    {
-    }
-};
 
 void setFrameMatrix(rw::Frame* frame, const EffectMatrix& world, float scale)
 {
@@ -230,8 +64,8 @@ bool findNestedChunk(const uint8_t* data, size_t length, uint32_t id,
         return false;
     for(size_t cursor = 0; cursor + 12 <= length;)
     {
-        ChunkSpan chunk;
-        if(!readChunk(data, length, cursor, &chunk))
+        RwChunkSpan chunk;
+        if (!readRwChunk(data, length, cursor, chunk))
             return false;
         if(chunk.id == id)
         {
@@ -259,18 +93,17 @@ rw::Atomic* readAtomicChunk(const EffectObjectChunk& object, rw::Frame** frame)
         return NULL;
 
     const uint8_t* source = object.bytes.data();
-    ChunkSpan outer;
-    if(!readChunk(source, object.bytes.size(), 0, &outer) ||
-       outer.id != CHUNK_ATOMIC)
+    RwChunkSpan outer;
+    if (!readRwChunk(source, object.bytes.size(), 0, outer) || outer.id != RW_CHUNK_ATOMIC)
         return NULL;
-    ChunkSpan structure;
-    if(!readChunk(source, object.bytes.size(), 12, &structure) ||
-       structure.id != rw::ID_STRUCT || structure.size < 12)
+    RwChunkSpan structure;
+    if (!readRwChunk(source, object.bytes.size(), 12, structure) || structure.id != rw::ID_STRUCT ||
+        structure.dataSize < 12)
         return NULL;
 
     const uint8_t* structureData = source + structure.offset + 12;
     const uint32_t frameIndex = read32(structureData);
-    const size_t frameCount = std::min<size_t>(frameIndex + 1, 64);
+    const size_t frameCount = frameIndex < 64 ? frameIndex + 1 : 64;
     if(frameIndex >= frameCount)
         return NULL;
     std::vector<rw::Frame*> frames(frameCount, NULL);
@@ -280,7 +113,7 @@ rw::Atomic* readAtomicChunk(const EffectObjectChunk& object, rw::Frame** frame)
     frames[frameIndex] = *frame;
 
     std::vector<uint8_t> converted;
-    if(structure.size >= 16)
+    if (structure.dataSize >= 16)
     {
         const size_t suffixOffset = structure.end;
         converted.resize(object.bytes.size() - 4);
@@ -324,7 +157,7 @@ rw::Atomic* readAtomicChunk(const EffectObjectChunk& object, rw::Frame** frame)
 
 rw::Clump* readCustomClumpChunk(const EffectObjectChunk& object)
 {
-    if(object.bytes.size() < 24 || read32(object.bytes.data()) != CHUNK_EST_CUSTOM)
+    if (object.bytes.size() < 24 || read32(object.bytes.data()) != RW_CHUNK_CUSTOM)
         return NULL;
 
     const uint8_t* data = object.bytes.data();
@@ -332,10 +165,10 @@ rw::Clump* readCustomClumpChunk(const EffectObjectChunk& object)
     size_t payloadOffset = 0;
     for(size_t cursor = 24; cursor + 12 <= length;)
     {
-        ChunkSpan chunk;
-        if(!readChunk(data, length, cursor, &chunk))
+        RwChunkSpan chunk;
+        if (!readRwChunk(data, length, cursor, chunk))
             break;
-        if(chunk.id == CHUNK_EST_CUSTOM_PAYLOAD)
+        if (chunk.id == RW_CHUNK_CUSTOM_PAYLOAD)
         {
             payloadOffset = chunk.offset;
             break;
@@ -345,17 +178,13 @@ rw::Clump* readCustomClumpChunk(const EffectObjectChunk& object)
     if(payloadOffset == 0)
         return NULL;
 
-    const ChunkSpan payload = {
-        payloadOffset,
-        payloadOffset + 12 + read32(data + payloadOffset + 4),
-        read32(data + payloadOffset),
-        read32(data + payloadOffset + 4),
-        read32(data + payloadOffset + 8)
-    };
+    RwChunkSpan payload;
+    if (!readRwChunk(data, length, payloadOffset, payload))
+        return NULL;
     const uint8_t* nested = data + payload.offset + 12;
     const size_t nestedLength = payload.end - payload.offset - 12;
     size_t clumpOffset = 0;
-    if(!findNestedChunk(nested, nestedLength, CHUNK_CLUMP, &clumpOffset))
+    if (!findNestedChunk(nested, nestedLength, RW_CHUNK_CLUMP, &clumpOffset))
         return NULL;
 
     rw::StreamMemory stream;
@@ -454,12 +283,10 @@ void destroyRenderObject(EffectRenderObject* object, rw::World* world)
 EffectMatrix
 effectIdentityMatrix(void)
 {
-    EffectMatrix matrix = {
-        { 1.0f, 0.0f, 0.0f },
-        { 0.0f, 1.0f, 0.0f },
-        { 0.0f, 0.0f, 1.0f },
-        { 0.0f, 0.0f, 0.0f }
-    };
+    EffectMatrix matrix = {.right = {.x = 1.0f, .y = 0.0f, .z = 0.0f},
+                           .up = {.x = 0.0f, .y = 1.0f, .z = 0.0f},
+                           .at = {.x = 0.0f, .y = 0.0f, .z = 1.0f},
+                           .pos = {.x = 0.0f, .y = 0.0f, .z = 0.0f}};
     return matrix;
 }
 
@@ -469,12 +296,10 @@ effectYRotationMatrix(float degrees, const EffectVector3& position)
     const float radians = degrees * 0.01745329251994329577f;
     const float sine = sinf(radians);
     const float cosine = cosf(radians);
-    EffectMatrix matrix = {
-        { cosine, 0.0f, -sine },
-        { 0.0f, 1.0f, 0.0f },
-        { sine, 0.0f, cosine },
-        position
-    };
+    EffectMatrix matrix = {.right = {.x = cosine, .y = 0.0f, .z = -sine},
+                           .up = {.x = 0.0f, .y = 1.0f, .z = 0.0f},
+                           .at = {.x = sine, .y = 0.0f, .z = cosine},
+                           .pos = position};
     return matrix;
 }
 
@@ -489,358 +314,70 @@ effectMatrixIsFinite(const EffectMatrix& matrix)
            isFinite(matrix.pos.y) && isFinite(matrix.pos.z);
 }
 
-EffectAsset::EffectAsset()
-    : stream(), records(), objects(), textureChunkOffset(SIZE_MAX),
-      directoryChunkOffset(SIZE_MAX), unknownActiveRecords(0)
-{
-}
-
-void
-EffectAsset::clear()
-{
-    stream.clear();
-    records.clear();
-    objects.clear();
-    textureChunkOffset = SIZE_MAX;
-    directoryChunkOffset = SIZE_MAX;
-    unknownActiveRecords = 0;
-}
-
-StageEffectResource::StageEffectResource()
-    : stageId(0), resourceId(0), archiveEntryIndex(0),
-      animationStreamCount(0), archiveEntryName(), packedBundle()
-{
-}
-
-void
-StageEffectResource::clear()
-{
-    stageId = 0;
-    resourceId = 0;
-    archiveEntryIndex = 0;
-    animationStreamCount = 0;
-    archiveEntryName.clear();
-    packedBundle.clear();
-}
-
-bool
-parseEstEffectStream(const uint8_t* data, size_t length, EffectAsset* asset)
-{
-    if(asset == NULL)
-        return false;
-    asset->clear();
-    if(data == NULL || length < 12)
-        return false;
-
-    std::vector<ChunkSpan> chunks;
-    for(size_t offset = 0; offset < length;)
-    {
-        ChunkSpan chunk;
-        if(!readChunk(data, length, offset, &chunk))
-            return false;
-        chunks.push_back(chunk);
-        if(chunk.id == CHUNK_TEXDICTIONARY && asset->textureChunkOffset == SIZE_MAX)
-            asset->textureChunkOffset = chunk.offset;
-        if(chunk.id == CHUNK_EST_DIRECTORY && asset->directoryChunkOffset == SIZE_MAX)
-            asset->directoryChunkOffset = chunk.offset;
-        offset = chunk.end;
-    }
-    if(asset->directoryChunkOffset == SIZE_MAX)
-        return false;
-
-    ChunkSpan directory;
-    if(!readChunk(data, length, asset->directoryChunkOffset, &directory) ||
-       directory.size < 4)
-        return false;
-    const uint32_t count = read32(data + directory.offset + 12);
-    if(count > 0x10000u ||
-       static_cast<uint64_t>(4) + static_cast<uint64_t>(count) * 0x1c >
-           directory.size)
-        return false;
-
-    asset->stream.assign(data, data + length);
-    asset->records.reserve(count);
-    const uint8_t* recordData = data + directory.offset + 16;
-    for(uint32_t i = 0; i < count; i++)
-    {
-        const uint8_t* source = recordData + i * 0x1c;
-        const uint32_t rawType = read32(source);
-        EffectRecord record;
-        record.type = recordType(rawType);
-        record.sourceType = record.type;
-        record.flags = read32(source + 4);
-        record.payloadReference = readI32(source + 8);
-        record.defaultScale = readFloat(source + 24);
-        if(record.defaultScale == 0.0f)
-            record.defaultScale = 1.0f;
-        if(!isFinite(record.defaultScale) || record.defaultScale < 0.0f)
-            record.defaultScale = 1.0f;
-
-        record.initialLifetimeSeconds = 0.8f;
-        record.textureName = readName(source + 12);
-        record.payloadObject = -1;
-        record.active = false;
-        record.fallback = false;
-        asset->records.push_back(record);
-    }
-
-    size_t objectCursor = directory.end;
-    for(size_t i = 0; i < asset->records.size(); i++)
-    {
-        EffectRecord& record = asset->records[i];
-        if(record.sourceType == EffectRecordType::Absent)
-        {
-            if(!record.textureName.empty())
-            {
-                record.type = EffectRecordType::TextureFallback;
-                record.fallback = true;
-                record.active = true;
-            }
-            continue;
-        }
-        if(record.payloadReference < 0)
-            continue;
-
-        if(record.payloadReference < static_cast<int32_t>(i))
-        {
-            const EffectRecord& owner =
-                asset->records[static_cast<size_t>(record.payloadReference)];
-            if(owner.active && owner.payloadObject >= 0)
-            {
-                record.payloadObject = owner.payloadObject;
-                record.active = true;
-            }
-            else
-            {
-                record.type = EffectRecordType::Unknown;
-                asset->unknownActiveRecords++;
-            }
-            continue;
-        }
-        if(record.payloadReference != static_cast<int32_t>(i))
-        {
-            record.type = EffectRecordType::Unknown;
-            asset->unknownActiveRecords++;
-            continue;
-        }
-
-        ChunkSpan object;
-        if(!readChunk(data, length, objectCursor, &object))
-            return false;
-        const uint32_t expected = expectedChunkId(record.sourceType);
-        if(expected == 0 || object.id != expected)
-        {
-            record.type = EffectRecordType::Unknown;
-            asset->unknownActiveRecords++;
-            objectCursor = object.end;
-            continue;
-        }
-        EffectObjectChunk payload;
-        payload.id = object.id;
-        payload.libraryId = object.libraryId;
-        payload.bytes.assign(data + object.offset, data + object.end);
-        record.payloadObject = static_cast<int32_t>(asset->objects.size());
-        record.active = true;
-        asset->objects.push_back(std::move(payload));
-        objectCursor = object.end;
-    }
-    return true;
-}
-
-bool
-parseEstEffectFile(const char* path, EffectAsset* asset)
-{
-    if(path == NULL || asset == NULL)
-        return false;
-    FILE* file = fopen(path, "rb");
-    if(file == NULL)
-        return false;
-    if(fseek(file, 0, SEEK_END) != 0)
-    {
-        fclose(file);
-        return false;
-    }
-    const long fileLength = ftell(file);
-    if(fileLength <= 0 || fseek(file, 0, SEEK_SET) != 0)
-    {
-        fclose(file);
-        return false;
-    }
-    std::vector<uint8_t> data(static_cast<size_t>(fileLength));
-    const bool read = fread(data.data(), 1, data.size(), file) == data.size();
-    fclose(file);
-    return read && parseEstEffectStream(data.data(), data.size(), asset);
-}
-
-bool
-resolveStageEffectResourceId(uint32_t resourceId,
-                             uint32_t* archiveEntryIndex)
-{
-    if(archiveEntryIndex == NULL ||
-       resourceId < STAGE_EFFECT_FIRST_RESOURCE_ID)
-        return false;
-    const uint32_t row = resourceId - STAGE_EFFECT_FIRST_RESOURCE_ID;
-    if(row >= STAGE_EFFECT_TABLE_ROW_COUNT)
-        return false;
-
-    const int16_t entry = STAGE_EFFECT_ARCHIVE_ENTRY_BY_RESOURCE[row];
-    if(entry < 0)
-        return false;
-    *archiveEntryIndex = static_cast<uint32_t>(entry);
-    return true;
-}
-
-bool
-loadStageEffectResource(const char* stageArchivePath, uint32_t stageId,
-                        StageEffectResource* resource)
-{
-    if(resource == NULL)
-        return false;
-    resource->clear();
-    if(stageArchivePath == NULL || stageId >= STAGE_EFFECT_STAGE_COUNT)
-        return false;
-
-    const uint32_t resourceId = STAGE_EFFECT_FIRST_RESOURCE_ID + stageId;
-    uint32_t archiveEntryIndex;
-    if(!resolveStageEffectResourceId(resourceId, &archiveEntryIndex))
-        return false;
-    std::vector<XafEntryInfo> entries;
-    if(!listXafEntries(stageArchivePath, entries) ||
-       archiveEntryIndex >= entries.size())
-        return false;
-
-    std::vector<uint8_t> bundle;
-    if(!readXafEntry(stageArchivePath, entries[archiveEntryIndex], bundle) ||
-       bundle.size() < 8)
-        return false;
-    const uint32_t streamCount = read32(bundle.data());
-    const uint64_t tableEnd = 4 + static_cast<uint64_t>(streamCount) * 4;
-    if(streamCount == 0 || streamCount > MAX_PACKED_BUNDLE_ENTRIES ||
-       tableEnd > bundle.size())
-        return false;
-
-    std::vector<uint8_t> stream;
-    for(uint32_t i = 0; i < streamCount; i++)
-    {
-        if(!extractPackedBundleEntry(bundle, i, stream) ||
-           stream.size() < 12 || read32(stream.data()) != CHUNK_ANIMATION ||
-           static_cast<uint64_t>(read32(stream.data() + 4)) + 12 !=
-               stream.size())
-            return false;
-    }
-
-    resource->stageId = stageId;
-    resource->resourceId = resourceId;
-    resource->archiveEntryIndex = archiveEntryIndex;
-    resource->animationStreamCount = streamCount;
-    resource->archiveEntryName = entries[archiveEntryIndex].name;
-    resource->packedBundle = std::move(bundle);
-    return true;
-}
-
-struct EffectManager::Impl
-{
-    rw::World* world;
-    rw::TexDictionary* textureDictionary;
-    bool initialized;
-    bool loaded;
-    bool paused;
-    float timeScale;
-    uint32_t nextHandle;
-    uint32_t randomState;
-    size_t invalidDispatches;
-    size_t emitterCursor;
-    EffectAsset asset;
-    StageEffectResource stageResource;
-    std::vector<EffectInstance> pool;
-    EffectEmitter emitters[EFFECT_EMITTER_CAPACITY];
-
-    Impl()
-        : world(NULL), textureDictionary(NULL), initialized(false),
-          loaded(false), paused(false), timeScale(1.0f), nextHandle(1),
-          randomState(0x13579bdfu), invalidDispatches(0), emitterCursor(0),
-          asset(), stageResource(), pool(EFFECT_ACTIVE_CAPACITY)
-    {
-    }
-};
-
 namespace
 {
 
-EffectManager::Impl* managerImpl(EffectManager* manager)
+uint32_t allocateHandle(EffectManagerState* state)
 {
-    return manager == NULL ? NULL : manager->implementation();
-}
-
-const EffectManager::Impl* managerImpl(const EffectManager* manager)
-{
-    return manager == NULL ? NULL : manager->implementation();
-}
-
-uint32_t allocateHandle(EffectManager::Impl* impl)
-{
-    if(impl == NULL)
+    if (state == NULL)
         return EFFECT_INVALID_HANDLE;
-    uint32_t handle = impl->nextHandle++;
+    uint32_t handle = state->nextHandle++;
     if(handle == 0 || handle == EFFECT_INVALID_HANDLE)
-        handle = impl->nextHandle++;
+        handle = state->nextHandle++;
     return handle;
 }
 
-bool validRecord(const EffectManager::Impl* impl, uint8_t recordIndex)
+bool validRecord(const EffectManagerState* state, uint8_t recordIndex)
 {
-    return impl != NULL && recordIndex != EFFECT_RECORD_SENTINEL &&
-           static_cast<size_t>(recordIndex) < impl->asset.records.size() &&
-           impl->asset.records[recordIndex].active;
+    return state != NULL && recordIndex != EFFECT_RECORD_SENTINEL &&
+           static_cast<size_t>(recordIndex) < state->asset.records.size() && state->asset.records[recordIndex].active;
 }
 
-EffectInstance* findInstance(EffectManager::Impl* impl, uint32_t handle)
+EffectInstance* findInstance(EffectManagerState* state, uint32_t handle)
 {
-    if(impl == NULL || handle == EFFECT_INVALID_HANDLE)
+    if (state == NULL || handle == EFFECT_INVALID_HANDLE)
         return NULL;
-    for(size_t i = 0; i < impl->pool.size(); ++i)
-        if(impl->pool[i].active && impl->pool[i].handle == handle)
-            return &impl->pool[i];
+    for (size_t i = 0; i < state->pool.size(); ++i)
+        if (state->pool[i].active && state->pool[i].handle == handle)
+            return &state->pool[i];
     return NULL;
 }
 
-const EffectInstance* findInstance(const EffectManager::Impl* impl,
-                                   uint32_t handle)
+const EffectInstance* findInstance(const EffectManagerState* state, uint32_t handle)
 {
-    if(impl == NULL || handle == EFFECT_INVALID_HANDLE)
+    if (state == NULL || handle == EFFECT_INVALID_HANDLE)
         return NULL;
-    for(size_t i = 0; i < impl->pool.size(); ++i)
-        if(impl->pool[i].active && impl->pool[i].handle == handle)
-            return &impl->pool[i];
+    for (size_t i = 0; i < state->pool.size(); ++i)
+        if (state->pool[i].active && state->pool[i].handle == handle)
+            return &state->pool[i];
     return NULL;
 }
 
-EffectEmitter* findEmitter(EffectManager::Impl* impl, uint32_t handle)
+EffectEmitter* findEmitter(EffectManagerState* state, uint32_t handle)
 {
-    if(impl == NULL || handle == EFFECT_INVALID_HANDLE)
+    if (state == NULL || handle == EFFECT_INVALID_HANDLE)
         return NULL;
     for(size_t i = 0; i < EFFECT_EMITTER_CAPACITY; ++i)
-        if(impl->emitters[i].active && impl->emitters[i].handle == handle)
-            return &impl->emitters[i];
+        if (state->emitters[i].active && state->emitters[i].handle == handle)
+            return &state->emitters[i];
     return NULL;
 }
 
-const EffectEmitter* findEmitter(const EffectManager::Impl* impl,
-                                 uint32_t handle)
+const EffectEmitter* findEmitter(const EffectManagerState* state, uint32_t handle)
 {
-    if(impl == NULL || handle == EFFECT_INVALID_HANDLE)
+    if (state == NULL || handle == EFFECT_INVALID_HANDLE)
         return NULL;
     for(size_t i = 0; i < EFFECT_EMITTER_CAPACITY; ++i)
-        if(impl->emitters[i].active && impl->emitters[i].handle == handle)
-            return &impl->emitters[i];
+        if (state->emitters[i].active && state->emitters[i].handle == handle)
+            return &state->emitters[i];
     return NULL;
 }
 
-void resetInstance(EffectManager::Impl* impl, EffectInstance* instance)
+void resetInstance(EffectManagerState* state, EffectInstance* instance)
 {
-    if(impl == NULL || instance == NULL)
+    if (state == NULL || instance == NULL)
         return;
-    destroyRenderObject(&instance->renderObject, impl->world);
+    destroyRenderObject(&instance->renderObject, state->world);
     *instance = EffectInstance();
 }
 
@@ -850,71 +387,63 @@ void resetEmitter(EffectEmitter* emitter)
         *emitter = EffectEmitter();
 }
 
-void releaseAllRenderObjects(EffectManager::Impl* impl)
+void releaseAllRenderObjects(EffectManagerState* state)
 {
-    if(impl == NULL)
+    if (state == NULL)
         return;
-    for(size_t i = 0; i < impl->pool.size(); ++i)
-        resetInstance(impl, &impl->pool[i]);
-    if(impl->textureDictionary != NULL)
+    for (size_t i = 0; i < state->pool.size(); ++i)
+        resetInstance(state, &state->pool[i]);
+    if (state->textureDictionary != NULL)
     {
-        impl->textureDictionary->destroy();
-        impl->textureDictionary = NULL;
+        state->textureDictionary->destroy();
+        state->textureDictionary = NULL;
     }
 }
 
-bool loadTextureDictionary(EffectManager::Impl* impl)
+bool loadTextureDictionary(EffectManagerState* state)
 {
-    if(impl == NULL || !impl->initialized || impl->world == NULL ||
-       impl->asset.textureChunkOffset == SIZE_MAX)
+    if (state == NULL || !state->initialized || state->world == NULL || state->asset.textureChunkOffset == SIZE_MAX)
         return false;
-    ChunkSpan chunk;
-    if(!readChunk(impl->asset.stream.data(), impl->asset.stream.size(),
-                  impl->asset.textureChunkOffset, &chunk))
+    RwChunkSpan chunk;
+    if (!readRwChunk(state->asset.stream.data(), state->asset.stream.size(), state->asset.textureChunkOffset, chunk))
         return false;
     rw::TexDictionary* previous = rw::TexDictionary::getCurrent();
     rw::StreamMemory stream;
-    stream.open(impl->asset.stream.data() + chunk.offset,
-                static_cast<uint32_t>(chunk.end - chunk.offset));
+    stream.open(state->asset.stream.data() + chunk.offset, static_cast<uint32_t>(chunk.end - chunk.offset));
     if(!rw::findChunk(&stream, rw::ID_TEXDICTIONARY, NULL, NULL))
         return false;
-    impl->textureDictionary = rw::TexDictionary::streamRead(&stream);
+    state->textureDictionary = rw::TexDictionary::streamRead(&stream);
     rw::TexDictionary::setCurrent(previous);
-    return impl->textureDictionary != NULL;
+    return state->textureDictionary != NULL;
 }
 
-bool instantiateRenderObject(EffectManager::Impl* impl,
-                             EffectInstance* instance)
+bool instantiateRenderObject(EffectManagerState* state, EffectInstance* instance)
 {
-    if(impl == NULL || instance == NULL || !impl->initialized ||
-       impl->world == NULL || !validRecord(impl, instance->recordIndex))
+    if (state == NULL || instance == NULL || !state->initialized || state->world == NULL ||
+        !validRecord(state, instance->recordIndex))
         return false;
-    const EffectRecord& record = impl->asset.records[instance->recordIndex];
+    const EffectRecord& record = state->asset.records[instance->recordIndex];
     rw::TexDictionary* previous = rw::TexDictionary::getCurrent();
-    if(impl->textureDictionary != NULL)
-        rw::TexDictionary::setCurrent(impl->textureDictionary);
+    if (state->textureDictionary != NULL)
+        rw::TexDictionary::setCurrent(state->textureDictionary);
 
     bool success = false;
     if(record.type == EffectRecordType::TextureFallback)
     {
-        instance->renderObject.atomic = createTextureFallback(
-            impl->textureDictionary, record.textureName,
-            &instance->renderObject.sourceFrame);
+        instance->renderObject.atomic =
+            createTextureFallback(state->textureDictionary, record.textureName, &instance->renderObject.sourceFrame);
         instance->renderObject.objectFrame =
             instance->renderObject.sourceFrame;
         success = instance->renderObject.atomic != NULL;
         if(success)
         {
             applyAtomicRenderFlags(instance->renderObject.atomic, record.flags);
-            impl->world->addAtomic(instance->renderObject.atomic);
+            state->world->addAtomic(instance->renderObject.atomic);
         }
     }
-    else if(record.payloadObject >= 0 &&
-            static_cast<size_t>(record.payloadObject) <
-                impl->asset.objects.size())
+    else if (record.payloadObject >= 0 && static_cast<size_t>(record.payloadObject) < state->asset.objects.size())
     {
-        const EffectObjectChunk& object =
-            impl->asset.objects[static_cast<size_t>(record.payloadObject)];
+        const EffectObjectChunk& object = state->asset.objects[static_cast<size_t>(record.payloadObject)];
         if(record.type == EffectRecordType::Atomic)
         {
             instance->renderObject.atomic = readAtomicChunk(
@@ -926,7 +455,7 @@ bool instantiateRenderObject(EffectManager::Impl* impl,
             {
                 applyAtomicRenderFlags(instance->renderObject.atomic,
                                         record.flags);
-                impl->world->addAtomic(instance->renderObject.atomic);
+                state->world->addAtomic(instance->renderObject.atomic);
             }
         }
         else if(record.type == EffectRecordType::Clump ||
@@ -946,7 +475,7 @@ bool instantiateRenderObject(EffectManager::Impl* impl,
                 {
                     applyAtomicRenderFlags(instance->renderObject.clump,
                                             record.flags);
-                    impl->world->addClump(instance->renderObject.clump);
+                    state->world->addClump(instance->renderObject.clump);
                 }
             }
         }
@@ -954,17 +483,15 @@ bool instantiateRenderObject(EffectManager::Impl* impl,
 
     rw::TexDictionary::setCurrent(previous);
     if(!success)
-        destroyRenderObject(&instance->renderObject, impl->world);
+        destroyRenderObject(&instance->renderObject, state->world);
     return success;
 }
 
-void updateRenderObject(const EffectManager::Impl* impl,
-                        EffectInstance* instance)
+void updateRenderObject(const EffectManagerState* state, EffectInstance* instance)
 {
-    if(impl == NULL || instance == NULL ||
-       static_cast<size_t>(instance->recordIndex) >= impl->asset.records.size())
+    if (state == NULL || instance == NULL || static_cast<size_t>(instance->recordIndex) >= state->asset.records.size())
         return;
-    const EffectRecord& record = impl->asset.records[instance->recordIndex];
+    const EffectRecord& record = state->asset.records[instance->recordIndex];
     setFrameMatrix(instance->renderObject.sourceFrame, instance->world,
                    record.defaultScale);
     if(instance->renderObject.objectFrame != NULL &&
@@ -978,19 +505,19 @@ void updateRenderObject(const EffectManager::Impl* impl,
     }
 }
 
-EffectInstance* acquireInstance(EffectManager::Impl* impl)
+EffectInstance* acquireInstance(EffectManagerState* state)
 {
-    if(impl == NULL)
+    if (state == NULL)
         return NULL;
-    for(size_t i = 0; i < impl->pool.size(); ++i)
-        if(!impl->pool[i].active)
-            return &impl->pool[i];
+    for (size_t i = 0; i < state->pool.size(); ++i)
+        if (!state->pool[i].active)
+            return &state->pool[i];
     return NULL;
 }
 
-bool sampleEmitterMatrix(EffectManager::Impl* impl, EffectEmitter* emitter)
+bool sampleEmitterMatrix(EffectManagerState* state, EffectEmitter* emitter)
 {
-    if(impl == NULL || emitter == NULL || emitter->provider == NULL)
+    if (state == NULL || emitter == NULL || emitter->provider == NULL)
         return false;
     EffectMatrix sampled;
     if(!emitter->provider(emitter->userData, &sampled) ||
@@ -1002,9 +529,8 @@ bool sampleEmitterMatrix(EffectManager::Impl* impl, EffectEmitter* emitter)
     }
     else
     {
-        impl->randomState = impl->randomState * 1664525u + 1013904223u;
-        const float degrees =
-            static_cast<float>(impl->randomState % 360u);
+        state->randomState = state->randomState * 1664525u + 1013904223u;
+        const float degrees = static_cast<float>(state->randomState % 360u);
         emitter->world = effectYRotationMatrix(degrees, sampled.pos);
     }
     return true;
@@ -1012,54 +538,34 @@ bool sampleEmitterMatrix(EffectManager::Impl* impl, EffectEmitter* emitter)
 
 }
 
-EffectManager::EffectManager()
-    : impl_(new Impl())
+EffectManager::EffectManager() : state_()
 {
-}
-
-EffectManager::Impl*
-EffectManager::implementation()
-{
-    return impl_;
-}
-
-const EffectManager::Impl*
-EffectManager::implementation() const
-{
-    return impl_;
 }
 
 EffectManager::~EffectManager()
 {
     shutdown();
-    delete impl_;
-    impl_ = NULL;
 }
 
 bool
 EffectManager::initialize(rw::World* world)
 {
-    Impl* impl = managerImpl(this);
-    if(impl == NULL)
-        return false;
-    if(impl->world != world)
+    if (state_.world != world)
     {
         stopAll();
-        releaseAllRenderObjects(impl);
-        impl->world = world;
+        releaseAllRenderObjects(&state_);
+        state_.world = world;
     }
-    impl->initialized = true;
-    if(impl->loaded && impl->world != NULL &&
-       impl->textureDictionary == NULL)
-        loadTextureDictionary(impl);
+    state_.initialized = true;
+    if (state_.loaded && state_.world != NULL && state_.textureDictionary == NULL)
+        loadTextureDictionary(&state_);
     return true;
 }
 
 bool
 EffectManager::load(const char* archivePath, const char* entryName)
 {
-    Impl* impl = managerImpl(this);
-    if(impl == NULL || archivePath == NULL)
+    if (archivePath == NULL)
         return false;
     std::vector<uint8_t> data;
     if(entryName != NULL && readXafEntry(archivePath, entryName, data))
@@ -1068,32 +574,29 @@ EffectManager::load(const char* archivePath, const char* entryName)
     if(!parseEstEffectFile(archivePath, &parsed))
         return false;
     stopAll();
-    releaseAllRenderObjects(impl);
-    impl->asset = std::move(parsed);
-    impl->invalidDispatches = 0;
-    impl->loaded = true;
-    if(impl->initialized && impl->world != NULL)
-        loadTextureDictionary(impl);
-    return impl->asset.unknownActiveRecords == 0;
+    releaseAllRenderObjects(&state_);
+    state_.asset = std::move(parsed);
+    state_.invalidDispatches = 0;
+    state_.loaded = true;
+    if (state_.initialized && state_.world != NULL)
+        loadTextureDictionary(&state_);
+    return state_.asset.unknownActiveRecords == 0;
 }
 
 bool
 EffectManager::loadStream(const uint8_t* data, size_t length)
 {
-    Impl* impl = managerImpl(this);
-    if(impl == NULL)
-        return false;
     EffectAsset parsed;
     if(!parseEstEffectStream(data, length, &parsed))
         return false;
     const bool resolved = parsed.unknownActiveRecords == 0;
     stopAll();
-    releaseAllRenderObjects(impl);
-    impl->asset = std::move(parsed);
-    impl->invalidDispatches = 0;
-    impl->loaded = true;
-    if(impl->initialized && impl->world != NULL)
-        loadTextureDictionary(impl);
+    releaseAllRenderObjects(&state_);
+    state_.asset = std::move(parsed);
+    state_.invalidDispatches = 0;
+    state_.loaded = true;
+    if (state_.initialized && state_.world != NULL)
+        loadTextureDictionary(&state_);
     return resolved;
 }
 
@@ -1101,132 +604,107 @@ bool
 EffectManager::loadStageResource(const char* stageArchivePath,
                                  uint32_t stageId)
 {
-    Impl* impl = managerImpl(this);
-    if(impl == NULL)
-        return false;
-    return loadStageEffectResource(stageArchivePath, stageId,
-                                   &impl->stageResource);
+    return loadStageEffectResource(stageArchivePath, stageId, &state_.stageResource);
 }
 
 void
 EffectManager::shutdown()
 {
-    Impl* impl = managerImpl(this);
-    if(impl == NULL)
-        return;
     stopAll();
-    releaseAllRenderObjects(impl);
-    impl->asset.clear();
-    impl->stageResource.clear();
-    impl->loaded = false;
-    impl->initialized = false;
-    impl->invalidDispatches = 0;
-    impl->world = NULL;
+    releaseAllRenderObjects(&state_);
+    state_.asset.clear();
+    state_.stageResource.clear();
+    state_.loaded = false;
+    state_.initialized = false;
+    state_.invalidDispatches = 0;
+    state_.world = NULL;
 }
 
 bool
 EffectManager::isInitialized() const
 {
-    const Impl* impl = managerImpl(this);
-    return impl != NULL && impl->initialized;
+    return state_.initialized;
 }
 
 bool
 EffectManager::isLoaded() const
 {
-    const Impl* impl = managerImpl(this);
-    return impl != NULL && impl->loaded;
+    return state_.loaded;
 }
 
 const EffectAsset&
 EffectManager::asset() const
 {
-    static const EffectAsset empty;
-    const Impl* impl = managerImpl(this);
-    return impl == NULL ? empty : impl->asset;
+    return state_.asset;
 }
 
 size_t
 EffectManager::invalidDispatchCount() const
 {
-    const Impl* impl = managerImpl(this);
-    return impl == NULL ? 0 : impl->invalidDispatches;
+    return state_.invalidDispatches;
 }
 
 bool
 EffectManager::hasStageResource() const
 {
-    const Impl* impl = managerImpl(this);
-    return impl != NULL && !impl->stageResource.packedBundle.empty();
+    return !state_.stageResource.packedBundle.empty();
 }
 
 const StageEffectResource&
 EffectManager::stageResource() const
 {
-    static const StageEffectResource empty;
-    const Impl* impl = managerImpl(this);
-    return impl == NULL ? empty : impl->stageResource;
+    return state_.stageResource;
 }
 
 void
 EffectManager::setPaused(bool paused)
 {
-    Impl* impl = managerImpl(this);
-    if(impl != NULL)
-        impl->paused = paused;
+    state_.paused = paused;
 }
 
 bool
 EffectManager::paused() const
 {
-    const Impl* impl = managerImpl(this);
-    return impl != NULL && impl->paused;
+    return state_.paused;
 }
 
 void
 EffectManager::setTimeScale(float timeScale)
 {
-    Impl* impl = managerImpl(this);
-    if(impl == NULL)
-        return;
     if(!isFinite(timeScale))
         timeScale = 1.0f;
-    impl->timeScale = std::max(0.0f, std::min(4.0f, timeScale));
+    state_.timeScale = timeScale <= 0.0f ? 0.0f : timeScale >= 4.0f ? 4.0f : timeScale;
 }
 
 float
 EffectManager::timeScale() const
 {
-    const Impl* impl = managerImpl(this);
-    return impl == NULL ? 1.0f : impl->timeScale;
+    return state_.timeScale;
 }
 
 uint32_t
 EffectManager::dispatchEst(uint8_t recordIndex, const EffectMatrix& world,
                            int16_t tuningA, int16_t tuningB)
 {
-    Impl* impl = managerImpl(this);
-    if(!validRecord(impl, recordIndex) || !effectMatrixIsFinite(world))
+    if (!validRecord(&state_, recordIndex) || !effectMatrixIsFinite(world))
     {
-        if(impl != NULL)
-            ++impl->invalidDispatches;
+        ++state_.invalidDispatches;
         return EFFECT_INVALID_HANDLE;
     }
-    EffectInstance* instance = acquireInstance(impl);
+    EffectInstance* instance = acquireInstance(&state_);
     if(instance == NULL)
         return EFFECT_INVALID_HANDLE;
 
     instance->active = true;
-    instance->handle = allocateHandle(impl);
+    instance->handle = allocateHandle(&state_);
     instance->recordIndex = recordIndex;
     instance->ageSeconds = 0.0f;
-    instance->lifetimeSeconds =
-        impl->asset.records[recordIndex].initialLifetimeSeconds;
+    instance->lifetimeSeconds = state_.asset.records[recordIndex].initialLifetimeSeconds;
     instance->tuningA = tuningA;
     instance->tuningB = tuningB;
     instance->world = world;
-    instantiateRenderObject(impl, instance);
-    updateRenderObject(impl, instance);
+    instantiateRenderObject(&state_, instance);
+    updateRenderObject(&state_, instance);
     return instance->handle;
 }
 
@@ -1235,33 +713,28 @@ EffectManager::startEmitter(uint8_t recordIndex, float intervalSeconds,
                             float lifetimeSeconds, uint8_t mode,
                             EffectMatrixProvider* provider, void* userData)
 {
-    Impl* impl = managerImpl(this);
-    if(!validRecord(impl, recordIndex) || provider == NULL ||
-       !isFinite(intervalSeconds) || intervalSeconds <= 0.0f ||
-       !isFinite(lifetimeSeconds) ||
-       (mode != EFFECT_EMITTER_COPY_MATRIX &&
-        mode != EFFECT_EMITTER_POSITION_RANDOM_Y))
+    if (!validRecord(&state_, recordIndex) || provider == NULL || !isFinite(intervalSeconds) ||
+        intervalSeconds <= 0.0f || !isFinite(lifetimeSeconds) ||
+        (mode != EFFECT_EMITTER_COPY_MATRIX && mode != EFFECT_EMITTER_POSITION_RANDOM_Y))
     {
-        if(impl != NULL)
-            ++impl->invalidDispatches;
+        ++state_.invalidDispatches;
         return EFFECT_INVALID_HANDLE;
     }
-    EffectEmitter& emitter =
-        impl->emitters[impl->emitterCursor % EFFECT_EMITTER_CAPACITY];
-    ++impl->emitterCursor;
+    EffectEmitter& emitter = state_.emitters[state_.emitterCursor % EFFECT_EMITTER_CAPACITY];
+    ++state_.emitterCursor;
     resetEmitter(&emitter);
     emitter.active = true;
-    emitter.handle = allocateHandle(impl);
+    emitter.handle = allocateHandle(&state_);
     emitter.recordIndex = recordIndex;
     emitter.mode = mode;
     emitter.intervalSeconds = intervalSeconds;
     emitter.lifetimeSeconds = lifetimeSeconds;
     emitter.provider = provider;
     emitter.userData = userData;
-    if(!sampleEmitterMatrix(impl, &emitter))
+    if (!sampleEmitterMatrix(&state_, &emitter))
     {
         resetEmitter(&emitter);
-        ++impl->invalidDispatches;
+        ++state_.invalidDispatches;
         return EFFECT_INVALID_HANDLE;
     }
     return emitter.handle;
@@ -1270,16 +743,15 @@ EffectManager::startEmitter(uint8_t recordIndex, float intervalSeconds,
 void
 EffectManager::stop(uint32_t handle)
 {
-    Impl* impl = managerImpl(this);
-    EffectInstance* instance = findInstance(impl, handle);
+    EffectInstance* instance = findInstance(&state_, handle);
     if(instance != NULL)
-        resetInstance(impl, instance);
+        resetInstance(&state_, instance);
 }
 
 void
 EffectManager::complete(uint32_t handle)
 {
-    EffectInstance* instance = findInstance(managerImpl(this), handle);
+    EffectInstance* instance = findInstance(&state_, handle);
     if(instance != NULL)
         instance->controllerComplete = true;
 }
@@ -1287,41 +759,36 @@ EffectManager::complete(uint32_t handle)
 void
 EffectManager::stopEmitter(uint32_t handle)
 {
-    resetEmitter(findEmitter(managerImpl(this), handle));
+    resetEmitter(findEmitter(&state_, handle));
 }
 
 void
 EffectManager::stopAll()
 {
-    Impl* impl = managerImpl(this);
-    if(impl == NULL)
-        return;
-    for(size_t i = 0; i < impl->pool.size(); ++i)
-        if(impl->pool[i].active)
-            resetInstance(impl, &impl->pool[i]);
+    for (size_t i = 0; i < state_.pool.size(); ++i)
+        if (state_.pool[i].active)
+            resetInstance(&state_, &state_.pool[i]);
     for(size_t i = 0; i < EFFECT_EMITTER_CAPACITY; ++i)
-        resetEmitter(&impl->emitters[i]);
+        resetEmitter(&state_.emitters[i]);
 }
 
 void
 EffectManager::update(float deltaSeconds)
 {
-    Impl* impl = managerImpl(this);
-    if(impl == NULL || impl->paused || deltaSeconds <= 0.0f ||
-       !isFinite(deltaSeconds))
+    if (state_.paused || deltaSeconds <= 0.0f || !isFinite(deltaSeconds))
         return;
-    const float delta = deltaSeconds * impl->timeScale;
+    const float delta = deltaSeconds * state_.timeScale;
     if(delta <= 0.0f)
         return;
 
     for(size_t i = 0; i < EFFECT_EMITTER_CAPACITY; ++i)
     {
-        EffectEmitter& emitter = impl->emitters[i];
+        EffectEmitter& emitter = state_.emitters[i];
         if(!emitter.active)
             continue;
         emitter.ageSeconds += delta;
         emitter.timerSeconds += delta;
-        const bool sampled = sampleEmitterMatrix(impl, &emitter);
+        const bool sampled = sampleEmitterMatrix(&state_, &emitter);
         if(sampled && emitter.timerSeconds >= emitter.intervalSeconds)
         {
             dispatchEst(emitter.recordIndex, emitter.world);
@@ -1332,9 +799,9 @@ EffectManager::update(float deltaSeconds)
             resetEmitter(&emitter);
     }
 
-    for(size_t i = 0; i < impl->pool.size(); ++i)
+    for (size_t i = 0; i < state_.pool.size(); ++i)
     {
-        EffectInstance& instance = impl->pool[i];
+        EffectInstance& instance = state_.pool[i];
         if(!instance.active)
             continue;
         instance.ageSeconds += delta;
@@ -1342,29 +809,26 @@ EffectManager::update(float deltaSeconds)
            (instance.lifetimeSeconds > 0.0f &&
             instance.ageSeconds >= instance.lifetimeSeconds))
         {
-            resetInstance(impl, &instance);
+            resetInstance(&state_, &instance);
             continue;
         }
-        updateRenderObject(impl, &instance);
+        updateRenderObject(&state_, &instance);
     }
 }
 
 void
 EffectManager::render() const
 {
-    const Impl* impl = managerImpl(this);
-    if(impl == NULL || !impl->initialized || impl->world == NULL)
+    if (!state_.initialized || state_.world == NULL)
         return;
-    for(size_t i = 0; i < impl->pool.size(); ++i)
+    for (size_t i = 0; i < state_.pool.size(); ++i)
     {
-        const EffectInstance& instance = impl->pool[i];
+        const EffectInstance& instance = state_.pool[i];
         if(!instance.active)
             continue;
-        if(instance.renderObject.atomic != NULL &&
-           instance.renderObject.atomic->world != impl->world)
+        if (instance.renderObject.atomic != NULL && instance.renderObject.atomic->world != state_.world)
             instance.renderObject.atomic->render();
-        if(instance.renderObject.clump != NULL &&
-           instance.renderObject.clump->world != impl->world)
+        if (instance.renderObject.clump != NULL && instance.renderObject.clump->world != state_.world)
             instance.renderObject.clump->render();
     }
 }
@@ -1372,12 +836,9 @@ EffectManager::render() const
 size_t
 EffectManager::activeCount() const
 {
-    const Impl* impl = managerImpl(this);
-    if(impl == NULL)
-        return 0;
     size_t count = 0;
-    for(size_t i = 0; i < impl->pool.size(); ++i)
-        if(impl->pool[i].active)
+    for (size_t i = 0; i < state_.pool.size(); ++i)
+        if (state_.pool[i].active)
             ++count;
     return count;
 }
@@ -1385,12 +846,9 @@ EffectManager::activeCount() const
 size_t
 EffectManager::activeEmitterCount() const
 {
-    const Impl* impl = managerImpl(this);
-    if(impl == NULL)
-        return 0;
     size_t count = 0;
     for(size_t i = 0; i < EFFECT_EMITTER_CAPACITY; ++i)
-        if(impl->emitters[i].active)
+        if (state_.emitters[i].active)
             ++count;
     return count;
 }
@@ -1398,8 +856,7 @@ EffectManager::activeEmitterCount() const
 size_t
 EffectManager::poolCapacity() const
 {
-    const Impl* impl = managerImpl(this);
-    return impl == NULL ? 0 : impl->pool.size();
+    return state_.pool.size();
 }
 
 bool
@@ -1407,14 +864,13 @@ EffectManager::getInstance(uint32_t handle, EffectInstanceState* state) const
 {
     if(state == NULL)
         return false;
-    const Impl* impl = managerImpl(this);
-    const EffectInstance* instance = findInstance(impl, handle);
+    const EffectInstance* instance = findInstance(&state_, handle);
     if(instance == NULL)
         return false;
     state->active = instance->active;
     state->handle = instance->handle;
     state->recordIndex = instance->recordIndex;
-    state->type = impl->asset.records[instance->recordIndex].type;
+    state->type = state_.asset.records[instance->recordIndex].type;
     state->ageSeconds = instance->ageSeconds;
     state->lifetimeSeconds = instance->lifetimeSeconds;
     state->tuningA = instance->tuningA;
@@ -1428,7 +884,7 @@ EffectManager::getEmitter(uint32_t handle, EffectEmitterState* state) const
 {
     if(state == NULL)
         return false;
-    const EffectEmitter* emitter = findEmitter(managerImpl(this), handle);
+    const EffectEmitter* emitter = findEmitter(&state_, handle);
     if(emitter == NULL)
         return false;
     state->active = emitter->active;

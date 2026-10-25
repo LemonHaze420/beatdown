@@ -1,4 +1,5 @@
 #include "audio/audio.h"
+#include "formats/common.h"
 #include "xaf_runtime.h"
 #include "audio/spatial.h"
 #include "formats/SOUND_CUE/sound_cues.h"
@@ -141,13 +142,6 @@ uint32_t allocateSoundHandle(void)
             return candidate;
     } while(g_nextSoundHandle != first);
     return AUDIO_SOUND_HANDLE_INVALID;
-}
-
-uint32_t read32(const uint8_t* data)
-{
-    uint32_t value;
-    memcpy(&value, data, sizeof(value));
-    return value;
 }
 
 uint32_t readBig32(const uint8_t* data)

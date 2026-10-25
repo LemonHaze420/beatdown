@@ -1,4 +1,5 @@
 #include "localized_graph.h"
+#include "formats/common.h"
 
 #include <string.h>
 
@@ -62,13 +63,6 @@ const LocalizedInfoSpriteLayout INFO_SPRITES
         { 1, 491.0f, 110.0f,   0.0f,   0.0f, 77.0f, 16.0f, 256.0f, 128.0f }
     }
 };
-
-uint32_t read32(const uint8_t* bytes)
-{
-    uint32_t value;
-    memcpy(&value, bytes, sizeof(value));
-    return value;
-}
 
 bool decompressMenuLzss(const uint8_t* input, size_t inputSize,
                         uint8_t* output, size_t outputSize)

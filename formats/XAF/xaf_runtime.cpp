@@ -1,19 +1,9 @@
 #include "xaf_runtime.h"
+#include "../common.h"
 #include <stdio.h>
 #include <string.h>
 namespace
 {
-const uint32_t XAF_MAGIC = 0x00464158;
-const uint32_t XAF_HEADER_SIZE = 0x40;
-const uint32_t XAF_DESCRIPTION_SIZE = 8;
-const uint32_t XAF_ENTRY_SIZE = 0x104;
-const uint32_t XAF_PATH_SIZE = 0xfc;
-uint32_t read32(const uint8_t* data)
-{
-    uint32_t value;
-    memcpy(&value, data, sizeof(value));
-    return value;
-}
 bool readAt(FILE* file, uint32_t offset, void* data, size_t size)
 {
     return fseek(file, static_cast<long>(offset), SEEK_SET) == 0 &&

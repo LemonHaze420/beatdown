@@ -1,4 +1,5 @@
 #include "ui/hud/radar.h"
+#include "formats/common.h"
 
 #include "formats/BATTLE_HUD/battle_hud_data.h"
 
@@ -581,13 +582,6 @@ struct TextureTableState
 };
 
 TextureTableState g_textureTable = {};
-
-uint32_t read32(const uint8_t* data)
-{
-    uint32_t value;
-    memcpy(&value, data, sizeof(value));
-    return value;
-}
 
 rw::Raster* readImageRaster(const uint8_t* chunk, uint32_t length)
 {

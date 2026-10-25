@@ -1,4 +1,5 @@
 #include "camera/camdat.h"
+#include "formats/common.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -136,20 +137,6 @@ const CamdatDescriptor CAMDAT_DESCRIPTORS[CAMDAT_DESCRIPTOR_COUNT] =
     { 3, { 0x13, 0x3f, 0x40, 0x00 } }
 };
 
-uint32_t read32(const uint8_t* data)
-{
-    uint32_t value;
-    memcpy(&value, data, sizeof(value));
-    return value;
-}
-
-int16_t read16(const uint8_t* data)
-{
-    int16_t value;
-    memcpy(&value, data, sizeof(value));
-    return value;
-}
-
 CameraFramingVector add(const CameraFramingVector& a,
                         const CameraFramingVector& b)
 {
@@ -270,7 +257,7 @@ CamdatDatabase::parse(const uint8_t* data, size_t size)
 
     words_.resize(size / 2);
     for(size_t i = 0; i < words_.size(); ++i)
-        words_[i] = read16(data + i * 2);
+        words_[i] = readI16(data + i * 2);
     return true;
 }
 

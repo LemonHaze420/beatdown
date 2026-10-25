@@ -12,6 +12,22 @@ const uint8_t SSL_FLAG_LOOP_END = 0x01;
 const uint8_t SSL_FLAG_LOOP_BODY = 0x02;
 const uint8_t SSL_FLAG_LOOP_START = 0x04;
 
+constexpr char SSL_CHUNK_MIDI[8] = {'I', 'E', 'C', 'S', 'i', 'd', 'i', 'M'};
+constexpr char SSL_CHUNK_PROG[8] = {'I', 'E', 'C', 'S', 'g', 'o', 'r', 'P'};
+constexpr char SSL_CHUNK_SSET[8] = {'I', 'E', 'C', 'S', 't', 'e', 's', 'S'};
+constexpr char SSL_CHUNK_SMPL[8] = {'I', 'E', 'C', 'S', 'l', 'p', 'm', 'S'};
+constexpr char SSL_CHUNK_VAGI[8] = {'I', 'E', 'C', 'S', 'i', 'g', 'a', 'V'};
+constexpr uint32_t SSL_HEADER_BYTES = 0x20;
+constexpr uint32_t SSL_CHUNK_HEADER_BYTES = 0x0c;
+
+constexpr int32_t PS_ADPCM_FILTER_A[5] = {0, 60, 115, 98, 122};
+constexpr int32_t PS_ADPCM_FILTER_B[5] = {0, 0, -52, -55, -60};
+struct SslDirectoryView
+{
+    const uint8_t* data;
+    uint32_t size;
+    uint32_t count;
+};
 struct SslStream
 {
 

@@ -1,4 +1,5 @@
 #include "ui/menu/system.h"
+#include "formats/common.h"
 
 #include "app/ui.h"
 #include "game/game.h"
@@ -83,13 +84,6 @@ const char* presentationText(uint16_t textId, const char* hostLiteral)
 {
     const char* text = g_game.localizedText(textId);
     return text != NULL ? text : hostLiteral;
-}
-
-uint32_t read32(const uint8_t* data)
-{
-    uint32_t value;
-    memcpy(&value, data, sizeof(value));
-    return value;
 }
 
 rw::Raster* readArtworkRaster(const uint8_t* chunk, uint32_t length)

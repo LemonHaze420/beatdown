@@ -1,6 +1,9 @@
 #ifndef CHARACTER_INTERNAL_H
 #define CHARACTER_INTERNAL_H
 
+#include "formats/common.h"
+#include "formats/RWS/rws.h"
+
 #include "character/character.h"
 #include <cstring>
 namespace rw
@@ -11,24 +14,9 @@ struct V3d;
 namespace character_detail
 {
 
-inline uint32_t read32(const uint8_t* data)
-{
-    uint32_t value;
-    memcpy(&value, data, sizeof(value));
-    return value;
-}
-
-inline uint16_t read16(const uint8_t* data)
-{
-    uint16_t value;
-    memcpy(&value, data, sizeof(value));
-    return value;
-}
-
-inline void write32(uint8_t* data, uint32_t value)
-{
-    memcpy(data, &value, sizeof(value));
-}
+using ::read16;
+using ::read32;
+using ::write32;
 
 inline uint8_t expandPs2Alpha(uint8_t alpha)
 {
@@ -36,10 +24,6 @@ inline uint8_t expandPs2Alpha(uint8_t alpha)
     return static_cast<uint8_t>(expanded > 255 ? 255 : expanded);
 }
 
-inline constexpr uint32_t CHUNK_STRUCT = 0x01;
-inline constexpr uint32_t CHUNK_CLUMP = 0x10;
-inline constexpr uint32_t CHUNK_IMAGE = 0x18;
-inline constexpr uint32_t CHUNK_ANIMATION = 0x1b;
 inline constexpr int CHARACTER_SECONDARY_BONE_INDEX = 10;
 inline constexpr uint32_t PLUGIN_MORPH = 0x105;
 

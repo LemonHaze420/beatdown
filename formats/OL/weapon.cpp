@@ -1,4 +1,5 @@
 #include "weapon.h"
+#include "../common.h"
 #include "weapon_combat_tables.h"
 #include <algorithm>
 #include <cmath>
@@ -8,24 +9,7 @@
 #include <sstream>
 namespace
 {
- #include "weapon_definitions.inc"
-uint32_t readU32(const uint8_t* data)
-{
-    return static_cast<uint32_t>(data[0]) |
-        (static_cast<uint32_t>(data[1]) << 8) |
-        (static_cast<uint32_t>(data[2]) << 16) |
-        (static_cast<uint32_t>(data[3]) << 24);
-}
-int32_t readS32(const uint8_t* data)
-{
-    return static_cast<int32_t>(readU32(data));
-}
-float bitsToFloat(uint32_t bits)
-{
-    float value;
-    std::memcpy(&value, &bits, sizeof(value));
-    return value;
-}
+#include "weapon_definitions.inc"
 void setError(std::string* error, const std::string& message)
 {
     if(error != NULL)
@@ -39,17 +23,11 @@ bool checkedChunk(const std::vector<uint8_t>& data, size_t offset,
         setError(error, "truncated RenderWare chunk header");
         return false;
     }
-    chunk.id = readU32(data.data() + offset);
-    chunk.dataSize = readU32(data.data() + offset + 4);
-    chunk.libraryId = readU32(data.data() + offset + 8);
-    chunk.offset = offset;
-    if(static_cast<size_t>(chunk.dataSize) >
-       data.size() - offset - 12)
+    if (!readRwChunk(data.data(), data.size(), offset, chunk))
     {
         setError(error, "RenderWare chunk extends past the asset");
         return false;
     }
-    chunk.end = offset + 12 + static_cast<size_t>(chunk.dataSize);
     return true;
 }
 uint32_t expectedChunkId(uint32_t objectType)
@@ -57,11 +35,11 @@ uint32_t expectedChunkId(uint32_t objectType)
     switch(objectType)
     {
     case WEAPON_OBJECT_ATOMIC:
-        return 0x14;
+        return RW_CHUNK_ATOMIC;
     case WEAPON_OBJECT_CLUMP:
-        return 0x10;
+        return RW_CHUNK_CLUMP;
     case WEAPON_OBJECT_CUSTOM:
-        return 0x78032010;
+        return RW_CHUNK_CUSTOM;
     default:
         return 0;
     }
@@ -78,7 +56,7 @@ bool validateCustomChunk(const std::vector<uint8_t>& data,
     WeaponAssetChunk nested;
     if(!checkedChunk(data, chunk.offset + 12, nested, error))
         return false;
-    if(nested.id != 0x78032020)
+    if (nested.id != RW_CHUNK_CUSTOM_PAYLOAD)
     {
         setError(error, "custom weapon object is missing ID 0x78032020");
         return false;
@@ -176,7 +154,7 @@ bool WeaponObjectLibrary::loadMemory(const uint8_t* data, size_t size,
     if(!checkedChunk(candidate, candidateTexture.end, candidateDirectory,
                      error))
         return false;
-    if(candidateDirectory.id != 0x79032003)
+    if (candidateDirectory.id != RW_CHUNK_OBJECT_DIRECTORY)
     {
         setError(error, "second weapon chunk is not the object directory");
         return false;
@@ -188,7 +166,7 @@ bool WeaponObjectLibrary::loadMemory(const uint8_t* data, size_t size,
     }
     const uint8_t* directoryData =
         candidate.data() + candidateDirectory.offset + 12;
-    const uint32_t count = readU32(directoryData);
+    const uint32_t count = read32(directoryData);
     const uint64_t recordBytes = static_cast<uint64_t>(count) * 0x1c;
     if(recordBytes > std::numeric_limits<size_t>::max() - 4 ||
        candidateDirectory.dataSize != 4 +
@@ -203,14 +181,13 @@ bool WeaponObjectLibrary::loadMemory(const uint8_t* data, size_t size,
     {
         const uint8_t* source = directoryData + 4 + index * 0x1c;
         WeaponObjectRecord& record = candidateRecords[index];
-        record.objectType = readU32(source);
-        record.objectFlags = readU32(source + 4);
-        record.payloadReference = readS32(source + 8);
+        record.objectType = read32(source);
+        record.objectFlags = read32(source + 4);
+        record.payloadReference = readI32(source + 8);
         std::memcpy(record.nameSlot.data(), source + 12,
                     record.nameSlot.size());
-        record.scaleBits = readU32(source + 24);
-        record.scale = record.scaleBits == 0 ? 1.0f :
-            bitsToFloat(record.scaleBits);
+        record.scaleBits = read32(source + 24);
+        record.scale = record.scaleBits == 0 ? 1.0f : floatFromBits(record.scaleBits);
         record.ownerIndex = -1;
         record.payload = WeaponAssetChunk{};
         record.hasPayload = false;
@@ -763,8 +740,7 @@ void WeaponManager::initializeDefinitions(void)
                 definitionValue.rawWords[24] & 0xffffu);
             definitionValue.companion_0x62 = static_cast<uint16_t>(
                 (definitionValue.rawWords[24] >> 16) & 0xffffu);
-            const float verticalOffset =
-                bitsToFloat(definitionValue.rawWords[21]);
+            const float verticalOffset = floatFromBits(definitionValue.rawWords[21]);
             if(std::isfinite(verticalOffset))
                 definitionValue.verticalOffset = verticalOffset;
         }

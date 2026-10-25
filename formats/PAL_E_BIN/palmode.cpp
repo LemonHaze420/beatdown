@@ -1,16 +1,10 @@
 #include "palmode.h"
+#include "../common.h"
+#include "../RWS/rws.h"
 #include <stdio.h>
 #include <string.h>
 namespace
 {
-const uint32_t CHUNK_IMAGE = 0x18;
-uint32_t read32(const uint8_t* data)
-{
-    return static_cast<uint32_t>(data[0]) |
-           (static_cast<uint32_t>(data[1]) << 8) |
-           (static_cast<uint32_t>(data[2]) << 16) |
-           (static_cast<uint32_t>(data[3]) << 24);
-}
 size_t paletteBytesForDepth(uint32_t depth)
 {
     if(depth == 4)
@@ -32,7 +26,7 @@ bool readImage(const std::vector<uint8_t>& data, size_t offset,
     const uint8_t* header = data.data() + offset;
     const uint32_t type = read32(header);
     const uint32_t length = read32(header + 4);
-    if(type != CHUNK_IMAGE)
+    if (type != RW_CHUNK_IMAGE)
     {
         if(error != NULL)
             *error = "record is not a RenderWare Image chunk";
